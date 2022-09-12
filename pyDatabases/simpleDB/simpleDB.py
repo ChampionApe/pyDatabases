@@ -1,4 +1,4 @@
-from _mixedTools import *
+from pyDatabases._mixedTools import *
 from copy import deepcopy
 _numtypes = (int,float,np.generic)
 _admissable_types = (pd.Index, pd.Series, pd.DataFrame)
@@ -39,7 +39,7 @@ def mergeVals(s1,s2):
 		return s1
 def symbols_(db_i):
 	""" return dictionary of symbols """
-	return db_i.symbols if isinstance(db_i, db) else db_i
+	return db_i.symbols if isinstance(db_i, database) else db_i
 
 class database:
 	""" Collection of data """

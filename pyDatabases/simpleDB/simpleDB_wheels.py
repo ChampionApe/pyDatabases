@@ -1,5 +1,5 @@
-from _mixedTools import *
-from db.db import database, getIndex, getDomains, type_, _numtypes, _admissable_types
+from pyDatabases._mixedTools import *
+from .simpleDB import database, getIndex, getDomains, type_, _numtypes, _admissable_types
 import openpyxl,io
 
 # 1: Read methods:
@@ -9,7 +9,7 @@ class read:
 		""" 'read' should be a dictionary with keys = method, value = list of sheets to apply this to."""
 		wb = read.simpleLoad(workbook) if isinstance(workbook,str) else workbook
 		db = database()
-		[db.mergeDbs(getattr(read, function)(wb[sheets],spliton=spliton)) for function,sheets in kwargs.items()];
+		[db.mergeDbs(getattr(read, function)(wb[sheet],spliton=spliton)) for function,sheets in kwargs.items() for sheet in sheets];
 		return db
 
 	@staticmethod
@@ -43,7 +43,7 @@ class read:
 	def maps(sheet,spliton='/'):
 		pd_sheet = pd.DataFrame(sheet.values)
 		pd_sheet.columns = [x.split(spliton)[0] for x in pd_sheet.iloc[0,:]]
-		return {col: aux_map(pd_sheet,col,spliton) for col in set(pd_sheet.columns)}
+		return {col: read.aux_map(pd_sheet,col,spliton) for col in set(pd_sheet.columns)}
 
 	@staticmethod
 	def aux_var(sheet,col,spliton):
@@ -59,7 +59,7 @@ class read:
 	def variables(sheet,spliton='/'):
 		pd_sheet = pd.DataFrame(sheet.values)
 		pd_sheet.columns = [x.split(spliton)[0] for x in pd_sheet.iloc[0,:]]
-		return {col: aux_var(pd_sheet,col,spliton) for col in set(pd_sheet.columns)}
+		return {col: read.aux_var(pd_sheet,col,spliton) for col in set(pd_sheet.columns)}
 
 	@staticmethod
 	def scalars(sheet,**kwargs):
@@ -75,7 +75,12 @@ class read:
 		var.name = domains[0]
 		return {domains[0]: var}
 
-# 2: Broadcasting-like methods
+# 2: 
+def readSets(db, types = None):
+	""" Read sets from database symbols """
+	[db.addOrMerge(set_, getIndex(symbol).get_level_values(set_).unique()) for symbol in db.getTypes(noneInit(types,['variable'])).values() for set_ in getIndex(symbol).names];
+
+# 3: Broadcasting-like methods
 def applyMult(symbol, mapping):
 	""" Apply 'mapping' to a symbol using multiindex """
 	if isinstance(symbol,pd.Index):
