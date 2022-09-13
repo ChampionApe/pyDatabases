@@ -321,3 +321,11 @@ def GpyDBs_AOM_First(db,symbol):
 		db[symbol.name].vals = merge_gpy_vals(db[symbol.name].vals,symbol.vals)
 	else:
 		db[symbol.name] = symbol
+
+def add_or_merge_vals(db,symbol,name=None):
+	if name is None:
+		name = symbol.name
+	if name in symbols_db(db):
+		db[name].vals = merge_gpy_vals(symbol, db[name].vals)
+	else:
+		db[name] = symbol

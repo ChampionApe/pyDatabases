@@ -9,6 +9,7 @@ _adj_admissable_types = (pd.Index, pd.Series, pd.DataFrame)
 # 1. cartesianProductIndex: Creates sparse, cartesian product from iterator of indices.
 # 2. OrdSet: A small class that works like an ordered set.
 # 3. adj: A small class used to subset and adjust pandas-like symbols.
+# 4. adjMultiIndexDB, adjMultiIndex: A couple of classes that helps broadcasting pandas symbols defined over different indices.
 
 ### -------- 	0: Small, auxiliary functions    -------- ###
 def tryint(x):
@@ -62,6 +63,9 @@ def getValues(symbol):
 
 def getDomains(x):
 	return [] if getIndex(x) is None else getIndex(x).names
+
+def domains_vlist(vlist):
+	return OrdSet().union(*[OrdSet(getDomains(vi)) for vi in vlist]).v
 
 ### -------- 	1. Cartesian produt index     -------- ###
 def cartesianProductIndex(indices):
@@ -248,3 +252,65 @@ class adj:
 			return ~l[0]
 		elif k == 'not':
 			return ~l
+
+### -------- 	4: Broadcasting methods    -------- ###
+class adjMultiIndexDB:
+	def __init__(self, db):
+		self.db = db
+
+	def bc(self,x,symbols,fill_value=0, sort_levels=None):
+		v = self.sparsedomain([x]+symbols if is_iterable(symbols) else [x+symbols]).add(x,fill_value=fill_value).rename(x.name)
+		return v if sort_levels is None else v.reorder_levels(sort_levels)
+
+	def mergeDomains(self,symbols,c=None,sort_levels=None):
+		v = self.sparsedomain(symbols, c = ('and', symbols) if c is None else c).dropna().index
+		return v if sort_levels is None else v.reorder_levels(sort_levels)
+
+	def sparsedomain(self, vlist, c=None):
+		return pd.Series(0, index = adj.rc_pdInd(self.initindex_fromproduct(domains_vlist(vlist),self.db), c))
+	
+	def initindex_fromproduct(self, domains):
+		return pd.MultiIndex.from_product([self.db.get(s) for s in domains]) if len(domains)>1 else self.db.get(domains[0])
+
+class adjMultiIndex:
+	@staticmethod
+	def bc(x,y,fill_value = 0):
+		""" Broadcast domain of 'x' to conform with domain of 'y'. """
+		y, y_dom, x_dom = getIndex(y), getDomains(y), getDomains(x)
+		if y_dom:
+			if not x_dom:
+				return pd.Series(x, index = y)
+			elif set(x_dom).intersection(set(y_dom)):
+				return x.add(pd.Series(0, index = y),fill_value=fill_value) if (set(x_dom)-set(y_dom)) else pd.Series(0, index = y).add(x,fill_value=fill_value)
+			else:
+				return pd.Series(0, index = cartesianProductIndex([getIndex(x),y])).add(x,fill_value=fill_value)
+		else:
+			return x
+	@staticmethod
+	def applyMult(symbol, mapping):
+		""" Apply 'mapping' to a symbol using multiindex """
+		if isinstance(symbol,pd.Index):
+			return (pd.Series(0, index = symbol).add(pd.Series(0, index = adj.rc_pd(mapping,symbol)))).dropna().index.reorder_levels(symbol.names+[k for k in mapping.names if k not in symbol.names])
+		elif isinstance(symbol,pd.Series):
+			if symbol.empty:
+				return pd.Series([], index = pd.MultiIndex.from_tuples([], names = symbol.index.names + [k for k in mapping.names if k not in symbol.index.names]))
+			else: 
+				return symbol.add(pd.Series(0, index = adj.rc_pd(mapping,symbol))).reorder_levels(symbol.index.names+[k for k in mapping.names if k not in symbol.index.names])
+	@staticmethod
+	def grid(v0,vT,index,gridtype='linear',phi=1):
+		""" If v0, vT are 1d numpy arrays, returns 2d array. If scalars, returns 1d arrays. """
+		if gridtype == 'linear':
+			return np.linspace(v0,vT,len(index))
+		elif gridtype=='polynomial':
+			return np.array([v0+(vT-v0)*((i-1)/(len(index)-1))**phi for i in range(1,len(index)+1)])
+	@staticmethod
+	def addGrid(v0,vT,index,name,gridtype = 'linear', phi = 1,sort_levels=None, sort_index = False):
+		""" NB: Make sure that v0 and vT are sorted similarly (if they are defined over indices, that is) """
+		if sort_index:
+			v0 = v0.sort_index()
+			vT = vT.sort_index()
+		if isinstance(v0,pd.Series):
+			return pd.DataFrame(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi).T, index = v0.index, columns = index).stack().rename(name).reorder_levels(index.names+v0.index.names if sort_levels is None else sort_levels)
+		else:
+			return pd.Series(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi), index = index,name=name)
+	
