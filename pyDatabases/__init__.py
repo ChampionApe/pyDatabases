@@ -1,2 +1,2 @@
-from .simpleDB import *
-from pyDatabases._mixedTools import OrdSet
+from pyDatabases._mixedTools import *
+from .gpyDB import *

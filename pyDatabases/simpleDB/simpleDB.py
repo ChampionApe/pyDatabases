@@ -1,7 +1,6 @@
 from pyDatabases._mixedTools import *
+from pyDatabases._mixedTools import _numtypes
 from copy import deepcopy
-_numtypes = (int,float,np.generic)
-_admissable_types = (pd.Index, pd.Series, pd.DataFrame)
 
 def type_(s):
 	if isinstance(s, pd.Index):
@@ -12,24 +11,6 @@ def type_(s):
 		return 'scalar'
 	else:
 		return 'other'
-def getIndex(symbol):
-	""" Defaults to None if no index is defined. """
-	if isinstance(symbol,(pd.Series,pd.DataFrame)):
-		return symbol.index
-	elif isinstance(symbol, pd.Index):
-		return symbol
-	elif not is_iterable(symbol):
-		return None
-def getDomains(x):
-	return [] if getIndex(x) is None else getIndex(x).names
-def getValues(symbol):
-	""" Default to None if no values are defined """
-	if isinstance(symbol, (pd.Series, pd.DataFrame)):
-		return symbol.values
-	elif isinstance(symbol, pd.Index):
-		return None
-	elif not is_iterable(symbol):
-		return symbol
 def mergeVals(s1,s2):
 	if isinstance(s1,pd.Series):
 		return s1.combine_first(s2)
@@ -39,9 +20,9 @@ def mergeVals(s1,s2):
 		return s1
 def symbols_(db_i):
 	""" return dictionary of symbols """
-	return db_i.symbols if isinstance(db_i, database) else db_i
+	return db_i.symbols if isinstance(db_i, SimpleDB) else db_i
 
-class database:
+class SimpleDB:
 	""" Collection of data """
 	def __init__(self,name='name',symbols=None,alias=None):
 		self.name = name
@@ -114,4 +95,3 @@ class database:
 	def mergeDbs(self, dbOther, priority='first'):
 		""" Merge all symbols in two databases """
 		[self.addOrMerge(name, symbol, priority=priority) for name,symbol in symbols_(dbOther).items()];
-
