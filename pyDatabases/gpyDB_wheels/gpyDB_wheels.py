@@ -67,22 +67,22 @@ class read:
 		pd_sheet = pd.DataFrame(sheet.values)
 		pd_sheet.columns = [x.split(spliton)[0] for x in pd_sheet.iloc[0,:]]
 		return {col: read.aux_map(pd_sheet,col,spliton) for col in set(pd_sheet.columns)}
-
+	@staticmethod
 	def variables(sheet,spliton='/',type_='variable'):
 		pd_sheet = pd.DataFrame(sheet.values)
 		pd_sheet.columns = [x.split(spliton)[0] for x in pd_sheet.iloc[0,:]]
 		return {col: read.aux_var(pd_sheet,col,spliton,type_) for col in set(pd_sheet.columns)}
-	
+	@staticmethod
 	def parameters(sheet,spliton='/'):
 		return read.variables(sheet,spliton=spliton,type_='parameter')
-	
+	@staticmethod
 	def scalar_variables(sheet,type_='variable',**kwargs):
 		pd_sheet = pd.DataFrame(sheet.values)
 		return {pd_sheet.iloc[i,0]: gpy(pd_sheet.iloc[i,1],**{'name':pd_sheet.iloc[i,0],'type':type_}) for i in range(pd_sheet.shape[0])}
-	
+	@staticmethod
 	def scalar_parameters(sheet,**kwargs):
 		return read.scalar_variables(sheet,type_='parameter')
-	
+	@staticmethod
 	def variable2D(sheet,spliton='/',**kwargs):
 		""" Read in 2d variable arranged in matrix; Note, only reads 1 variable per sheet."""
 		pd_sheet = pd.DataFrame(sheet.values)
@@ -156,7 +156,7 @@ class robust:
 			robust.merge_dbs_GpyDB_gams(d,db1,g2np) # merge into d with priority to db1.
 			robust.merge_dbs_gams_GpyDB(db1,d,g2np,priority='second') 
 
-	@staticmethod	
+	@staticmethod
 	def robust_gpy(symbol,db=None,g2np=None,**kwargs):
 		if isinstance(symbol,admissable_gpy_types):
 			return gpy(symbol,**kwargs)
@@ -206,202 +206,170 @@ class adj(adj):
 		copy.vals = adj.rc_AdjPd(symbol.vals, alias=alias, lag = lag)
 		return copy
 
-	@staticmethod
-	def rc_AdjPd(symbol, alias = None, lag = None):
-		if isinstance(symbol, pd.Index):
-			return adj.AdjAliasInd(adj.AdjLagInd(symbol, lag=lag), alias = alias)
-		elif isinstance(symbol, pd.Series):
-			return symbol.to_frame().set_index(adj.AdjAliasInd(adj.AdjLagInd(symbol.index, lag=lag), alias=alias),verify_integrity=False).iloc[:,0]
-		elif isinstance(symbol, pd.DataFrame):
-			return symbol.set_index(adj.AdjAliasInd(adj.AdjLagInd(symbol.index, lag=lag), alias=alias),verify_integrity=False)
-		elif isinstance(symbol,gpy):
-			return adj.rc_AdjPd(symbol.vals, alias = alias, lag = lag)
-		elif isinstance(symbol, (int,float,np.generic)):
-			return symbol
-		else:
-			raise TypeError(f"Input was type {type(symbol)}")
-	@staticmethod
-	def rc_pd(s=None,c=None,alias=None,lag=None, pm = True, **kwargs):
-		if isinstance(s,(int,float,np.generic)):
-			return s
-		elif isinstance(s, gpy) and (s.type in ('scalar_variable','scalar_parameter')):
-			return s.vals
-		else:
-			return adj.rctree_pd(s=s, c = c, alias = alias, lag = lag, pm = pm, **kwargs)
-	@staticmethod
-	def rc_pdInd(s=None,c=None,alias=None,lag=None,pm=True,**kwargs):
-		if isinstance(s,(int,float,np.generic)) or (isinstance(s,gpy) and (s.type in ('scalar_variable','scalar_parameter'))):
-			return None
-		else:
-			return adj.rctree_pdInd(s=s,c=c,alias=alias,lag=lag,pm=pm,**kwargs)
-
 class aggregateDB:
 	# Main methods:
 	# 1. updateSetValues: Update name of set elements in database using a mapping (dictionary)
 	# 2. renameSet: Update name of a set in database.
-	# 3. read_sets: Add sets to the database by reading established variables/parameters/mappings.
-	# 4. update_sets: For existing database clean up set definitions and use 'read_sets' method to redefine sets.
+	# 3. readSets: Add sets to the database by reading established variables/parameters/mappings.
+	# 4. updateSets: For existing database clean up set definitions and use 'readSets' method to redefine sets.
 	# 5. subset_db: Subset all symbols in database. 
 	# 6. Aggregate database according to mapping. 
-	def __init__(self,db):
-		self.db = db
-
-	def updateSetValues(self,set_,ns):
+	def updateSetValues(db,set_,ns):
 		""" Update set values for 'set_' using the namespace 'ns' """
-		full_map = {k:k if k not in ns else ns[k] for k in self.db[set_]}
-		for k,v in self.db.vardom(set_,types=['set','subset','mapping','parameter','variable']).items():
-			[self.updateSetValue_Symbol(k,s,full_map) for s in v];
+		full_map = {k:k if k not in ns else ns[k] for k in db[set_]}
+		for k,v in db.vardom(set_,types=['set','subset','mapping','parameter','variable']).items():
+			[aggregateDB.updateSetValue_Symbol(db,k,s,full_map) for s in v];
 	
-	def updateSetValue_Symbol(self,set_,s,ns):
-		if not self.db.get(s).empty:
-			if isinstance(self.db.get(s),pd.MultiIndex):
-				self.db[s].vals = self.db.get(s).set_levels(self.db.get(s).levels[self.db[s].domains.index(set_)].map(ns),level=set_)
-			elif isinstance(self.db.get(s),pd.Index):
-				self.db[s].vals = self.db[s].index.map(ns).unique()
-			elif isinstance(self.db[s].index,pd.MultiIndex):
-				self.db.get(s).index = self.db[s].index.set_levels(self.db[s].index.levels[self.db[s].domains.index(set_)].map(ns),level=set_)
-			elif isinstance(self.db[s].index,pd.Index):
-				self.db.get(s).index = self.db[s].index.map(ns).unique()
+	def updateSetValue_Symbol(db,set_,s,ns):
+		if not db.get(s).empty:
+			if isinstance(db.get(s),pd.MultiIndex):
+				db[s].vals = db.get(s).set_levels(db.get(s).levels[db[s].domains.index(set_)].map(ns),level=set_)
+			elif isinstance(db.get(s),pd.Index):
+				db[s].vals = db[s].index.map(ns).unique()
+			elif isinstance(db[s].index,pd.MultiIndex):
+				db.get(s).index = db[s].index.set_levels(db[s].index.levels[db[s].domains.index(set_)].map(ns),level=set_)
+			elif isinstance(db[s].index,pd.Index):
+				db.get(s).index = db[s].index.map(ns).unique()
 	
 	# ----------------------- 2. Rename set names ------------------------- #
-	def renameSets(self, ns):
+	def renameSets(db, ns):
 		""" 'ns' is a dictionary with key = original set, value = new set name. This does not alter aliases (unless they are included in 'ns') """
-		[self.renameSet(self.db,k,v) for k,v in ns.items()];
+		[aggregateDB.renameSet(db,k,v) for k,v in ns.items()];
 	
-	def renameSet(self,k,v):
-		if k in self.db.symbols:
-			self.db[v] = self.db.get(k).rename(v)
-			self.db.series.__delitem__(k)
-		[self.db.get(vi).__setattr__('index',self.db[vi].index.rename({k:v})) for vi in self.db.vardom(k,types=('variable','parameter'))[k]];
-		[self.db.__setitem__(vi, self.db.get(vi).rename({k:v})) for vi in self.db.vardom(k,types=['mapping'])[k]];
+	def renameSet(db,k,v):
+		if k in db.symbols:
+			db[v] = db.get(k).rename(v)
+			db.series.__delitem__(k)
+		[db.get(vi).__setattr__('index',db[vi].index.rename({k:v})) for vi in db.vardom(k,types=('variable','parameter'))[k]];
+		[db.__setitem__(vi, db.get(vi).rename({k:v})) for vi in db.vardom(k,types=['mapping'])[k]];
 
 	# ----------------------- 3-4. Read sets/update sets from database  ------------------------- #
-	def read_sets(self, types=None, ignore_alias=False):
+	def readSets(db, types=None, ignore_alias=False):
 		""" read and define set elements from all symbols of type 'types'. """
 		if ignore_alias:
-			[add_or_merge_vals(self.db, symbol.index.get_level_values(set_).unique()) for symbol in self.db.getTypes(noneInit(types,['variable','parameter'])).values() for set_ in (set(symbol.domains)-self.db.alias_notin_db)];
+			[add_or_merge_vals(db, symbol.index.get_level_values(set_).unique()) for symbol in db.getTypes(noneInit(types,['variable','parameter'])).values() for set_ in (set(symbol.domains)-db.alias_notin_db)];
 		else:
-			[add_or_merge_vals(self.db, symbol.index.get_level_values(set_).unique()) for symbol in self.db.getTypes(noneInit(types,['variable','parameter'])).values() for set_ in set(symbol.domains)];
+			[add_or_merge_vals(db, symbol.index.get_level_values(set_).unique()) for symbol in db.getTypes(noneInit(types,['variable','parameter'])).values() for set_ in set(symbol.domains)];
 	
-	def update_sets(self, types = None, clean=True, ignore_alias=False, clean_alias = False):
+	def updateSets(db, types = None, clean=True, ignore_alias=False, clean_alias = False):
 		if clean:
-			self.clean_sets()
-		self.read_sets(types = types, ignore_alias = ignore_alias)
+			aggregateDB.clean_sets(db)
+		aggregateDB.readSets(db,types = types, ignore_alias = ignore_alias)
 		if clean_alias:
-			self.clean_aliases(types)
-		self.read_aliased_sets(ignore_alias)
+			aggregateDB.clean_aliases(db,types)
+		aggregateDB.read_aliased_sets(db,ignore_alias)
 		if clean:
-			self.update_subsets_from_sets()
-			self.update_maps_from_sets()
+			aggregateDB.update_subsets_from_sets(db)
+			aggregateDB.update_maps_from_sets(db)
 
-	def clean_sets(self):
+	def clean_sets(db):
 		""" create empty indices for all sets  """
-		[self.db.__setitem__(set_, pd.Index([], name = set_)) for set_ in set(db.getTypes(['set']))-set(['alias_set','alias_map2'])];
+		[db.__setitem__(set_, pd.Index([], name = set_)) for set_ in set(db.getTypes(['set']))-set(['alias_set','alias_map2'])];
 
-	def clean_aliases(self,types):
+	def clean_aliases(db,types):
 		""" Remove aliases that are not used in variables/parameters """
-		self.db.series['alias_'] = pd.MultiIndex.from_tuples(self.active_aliases(types), names = ['alias_set','alias_map2'])
-		self.db.update_alias()
+		db.series['alias_'] = pd.MultiIndex.from_tuples(aggregateDB.active_aliases(db,types), names = ['alias_set','alias_map2'])
+		db.update_alias()
 
-	def active_aliases(self,types):
+	def active_aliases(db,types):
 		""" Return list of tuples with alias_ that are used in the model variables / mappings"""
-		return [(k,v) for k in self.db.get('alias_set') for v in [x for x in self.db.alias_dict[k] if len(self.db.vardom(k,types=types)[x])>0]]
+		return [(k,v) for k in db.get('alias_set') for v in [x for x in db.alias_dict[k] if len(db.vardom(k,types=types)[x])>0]]
 	
-	def read_aliased_sets(self,ignore_alias):
+	def read_aliased_sets(db,ignore_alias):
 		""" Read in all elements for aliased sets. If ignore alias"""
-		for set_i in self.db.alias_dict:
-			all_elements = sunion_empty([set(db.get(set_ij)) for set_ij in self.db.alias_dict0[set_i] if set_ij in self.db.getTypes(['set'])])
+		for set_i in db.alias_dict:
+			all_elements = sunion_empty([set(db.get(set_ij)) for set_ij in db.alias_dict0[set_i] if set_ij in db.getTypes(['set'])])
 			if ignore_alias:
-				[self.db.__setitem__(set_ij, pd.Index(all_elements,name=set_ij)) for set_ij in self.db.alias_dict0[set_i] if set_ij in self.db.getTypes(['set'])];
+				[db.__setitem__(set_ij, pd.Index(all_elements,name=set_ij)) for set_ij in db.alias_dict0[set_i] if set_ij in db.getTypes(['set'])];
 			else:
-				[self.db.__setitem__(set_ij, pd.Index(all_elements,name=set_ij)) for set_ij in self.db.alias_dict0[set_i]];
+				[db.__setitem__(set_ij, pd.Index(all_elements,name=set_ij)) for set_ij in db.alias_dict0[set_i]];
 	
-	def update_subsets_from_sets(self):
-		[self.update_subset(ss) for ss in self.db.getTypes(['subset'])];
+	def update_subsets_from_sets(db):
+		[aggregateDB.update_subset(db,ss) for ss in db.getTypes(['subset'])];
 
-	def update_subset(self,ss):
-		if self.db.alias(self.db.get(ss).name) not in self.db.symbols:
-			self.db.__setitem__(ss,pd.Index([],name=self.db.alias(self.db.get(ss).name)))
+	def update_subset(db,ss):
+		if db.alias(db.get(ss).name) not in db.symbols:
+			db.__setitem__(ss,pd.Index([],name=db.alias(db.get(ss).name)))
 		else:
-			self.db.__setitem__(ss,adj.rctree_pd(s=self.db[ss],c=self.db[self.db.alias(self.db.get(ss).name)]))
+			db.__setitem__(ss,adj.rctree_pd(s=db[ss],c=db[db.alias(db.get(ss).name)]))
 	
-	def update_maps_from_sets(self):
-		[self.update_map(m) for m in self.db.getTypes(['mapping'])];
+	def update_maps_from_sets(db):
+		[aggregateDB.update_map(db,m) for m in db.getTypes(['mapping'])];
 	
-	def update_map(self,m):
-		if sum([bool(set(self.db.symbols.keys()).intersection(self.db.alias_all(s))) for s in self.db[m].domains])<len(self.db[m].domains):
-			self.db.__setitem__(m, pd.MultiIndex.from_tuples([], names = self.db[m].domains))
+	def update_map(db,m):
+		if sum([bool(set(db.symbols.keys()).intersection(db.alias_all(s))) for s in db[m].domains])<len(db[m].domains):
+			db.__setitem__(m, pd.MultiIndex.from_tuples([], names = db[m].domains))
 		else:
-			self.db.__setitem__(m, adj.rctree_pd(s=self.db[m], c = ('and', [self.db[s] for s in self.db[m].domains])))
+			db.__setitem__(m, adj.rctree_pd(s=db[m], c = ('and', [db[s] for s in db[m].domains])))
 
 	# ----------------------- 5. Subset database with index ------------------------- #
-	def subset_db(self,index):
-		[self.subset_db_valsFromList(index.rename(k), v) for k,v in self.db.vardom(index.name, types = ('set','subset','mapping','variable','parameter')).items()];
+	def subset_db(db,index):
+		[aggregateDB.subset_db_valsFromList(db,index.rename(k), v) for k,v in db.vardom(index.name, types = ('set','subset','mapping','variable','parameter')).items()];
 
-	def subset_db_valsFromList(self,index,listOfSymbols):
-		[self.db[symbol].__setattr__('vals', adj.rctree_pd(self.db.get(symbol), index)) for symbol in listOfSymbols];
+	def subset_db_valsFromList(db,index,listOfSymbols):
+		[db[symbol].__setattr__('vals', adj.rctree_pd(db.get(symbol), index)) for symbol in listOfSymbols];
 
 	# ----------------------- 6. Methods for aggregating database ------------------------- #
-	def aggDB(self, mapping, aggBy=None, replaceWith=None, checkUnique=True, AggLike = None):
+	def aggDB(db, mapping, aggBy=None, replaceWith=None, checkUnique=True, AggLike = None):
 		""" Aggregate symbols in db according to mapping. This does so inplace, i.e. the set aggBy is altered. 
 			Note: The aggregation assumes that mapping is 'one-to-many'; if this is not the case, a warning is printed (if checkUnique) """
 		aggBy,replaceWith = noneInit(aggBy, mapping.names[0]), noneInit(replaceWith,mapping.names[-1])
-		defaultAggLike = {k: ('Sum',{}) for v,l in self.db.vardom(aggBy).items() for k in l}
+		defaultAggLike = {k: ('Sum',{}) for v,l in db.vardom(aggBy).items() for k in l}
 		AggLike = defaultAggLike if AggLike is None else defaultAggLike | AggLike
-		[self.db.__setitem__(k, self.aggDB_set(k, mapping, aggBy, replaceWith)) for k in self.db.vardom(aggBy,types=['set'])];
-		[self.db.__setitem__(vi, self.aggDB_subset(vi, mapping.set_names(k,level=aggBy), k, replaceWith, checkUnique)) for k,v in self.db.vardom(aggBy, types=['subset']).items() for vi in v];
-		[self.db.__setitem__(vi, self.aggDB_mapping(vi, mapping.set_names(k,level=aggBy), k, replaceWith, checkUnique)) for k,v in self.db.vardom(aggBy, types=['mapping']).items() for vi in v];
-		[self.db.__setitem__(vi, getattr(self,AggLike[vi][0])(self.db.get(vi),mapping.set_names(k,level=aggBy),k,replaceWith,checkUnique,**AggLike[vi][1])) for k,v in self.db.vardom(aggBy).items() for vi in v];
-		return self.db
+		[db.__setitem__(k, aggregateDB.aggDB_set(k, mapping, aggBy, replaceWith)) for k in db.vardom(aggBy,types=['set'])];
+		[db.__setitem__(vi, aggregateDB.aggDB_subset(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith, checkUnique)) for k,v in db.vardom(aggBy, types=['subset']).items() for vi in v];
+		[db.__setitem__(vi, aggregateDB.aggDB_mapping(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith, checkUnique)) for k,v in db.vardom(aggBy, types=['mapping']).items() for vi in v];
+		[db.__setitem__(vi, getattr(db,AggLike[vi][0])(db.get(vi),mapping.set_names(k,level=aggBy),k,replaceWith,checkUnique,**AggLike[vi][1])) for k,v in db.vardom(aggBy).items() for vi in v];
+		return db
 
-	def aggDB_set(self, k, mapping, aggBy, replaceWith):
+	def aggDB_set(k, mapping, aggBy, replaceWith):
 		return mapping.get_level_values(replaceWith).unique().rename(k)
 	
-	def aggDB_subset(self, k, mapping, aggBy, replaceWith,checkUnique):
-		o,d1,d2 = overlaps(self.db[k],mapping)
+	def aggDB_subset(db, k, mapping, aggBy, replaceWith,checkUnique):
+		o,d1,d2 = overlaps(db[k],mapping)
 		if checkUnique:
-			_checkUnique(self.db[k].index,mapping,o,d1,d2,aggBy,replaceWith,k)
-		return self.aggReplace(self.db.get(k),mapping,aggBy,replaceWith,o).unique().rename(aggBy)
+			aggregateDB._checkUnique(db[k].index,mapping,o,d1,d2,aggBy,replaceWith,k)
+		return aggregateDB.aggReplace(db.get(k),mapping,aggBy,replaceWith,o).unique().rename(aggBy)
 	
-	def aggDB_mapping(self, k, mapping, aggBy, replaceWith, checkUnique):
-		o,d1,d2 = overlaps(self.db[k],mapping)
+	def aggDB_mapping(db, k, mapping, aggBy, replaceWith, checkUnique):
+		o,d1,d2 = overlaps(db[k],mapping)
 		if checkUnique:
-			self._checkUnique(self.db[k].index,mapping,o,d1,d2,aggBy,replaceWith,k)
-		return self.aggReplace(self.db.get(k),mapping,aggBy,replaceWith,o).unique().set_names(aggBy,level=replaceWith)
+			aggregateDB._checkUnique(db[k].index,mapping,o,d1,d2,aggBy,replaceWith,k)
+		return aggregateDB.aggReplace(db.get(k),mapping,aggBy,replaceWith,o).unique().set_names(aggBy,level=replaceWith)
 	
-	def aggVarSum(self, var, mapping, aggBy, replaceWith,checkUnique):
+	def aggVarSum(var, mapping, aggBy, replaceWith,checkUnique):
 		o,d1,d2 = overlaps(var,mapping)
 		if checkUnique:
-			self._checkUnique(var.index,mapping,o,d1,d2,aggBy,replaceWith,var.name)
-		return self.aggReplace(var,mapping,aggBy,replaceWith,o).rename_axis(index={replaceWith: aggBy}).groupby(var.index.names).sum().rename(var.name)
+			aggregateDB._checkUnique(var.index,mapping,o,d1,d2,aggBy,replaceWith,var.name)
+		return aggregateDB.aggReplace(var,mapping,aggBy,replaceWith,o).rename_axis(index={replaceWith: aggBy}).groupby(var.index.names).sum().rename(var.name)
 	
-	def aggVarMean(self, var, mapping, aggBy, replaceWith,checkUnique):
+	def aggVarMean(var, mapping, aggBy, replaceWith,checkUnique):
 		o,d1,d2 = overlaps(var,mapping)
 		if checkUnique:
-			self._checkUnique(var.index,mapping,o,d1,d2,aggBy,replaceWith,var.name)
-		return self.aggReplace(var,mapping,aggBy,replaceWith,o).rename_axis(index={replaceWith: aggBy}).groupby(var.index.names).mean().rename(var.name)
+			aggregateDB._checkUnique(var.index,mapping,o,d1,d2,aggBy,replaceWith,var.name)
+		return aggregateDB.aggReplace(var,mapping,aggBy,replaceWith,o).rename_axis(index={replaceWith: aggBy}).groupby(var.index.names).mean().rename(var.name)
 	
-	def aggVarSplitDistr(self,var,mapping,aggBy,replaceWith,checkUnique,weights=None):
+	def aggVarSplitDistr(var,mapping,aggBy,replaceWith,checkUnique,weights=None):
 		""" Can be used in many-to-one mappings to split up data with the key 'weights' """
 		return (var*weights).dropna().droplevel(aggBy).rename_axis(index={replaceWith: aggBy}).reorder_levels(var.index.names).rename(var.name)
 	
-	def aggVarWeightedSum(self,var,mapping,aggBy,replaceWith,checkUnique,weights=None):
-		return self.aggVarSum((var*weights).dropna().droplevel(replaceWith).reorder_levels(var.index.names),mapping,aggBy,replaceWith,checkUnique).rename(var.name)
+	def aggVarWeightedSum(var,mapping,aggBy,replaceWith,checkUnique,weights=None):
+		return aggregateDB.aggVarSum((var*weights).dropna().droplevel(replaceWith).reorder_levels(var.index.names),mapping,aggBy,replaceWith,checkUnique).rename(var.name)
 	
-	def aggVarWeightedSum_gb(self,var,mapping,aggBy,replaceWith,checkUnique,weights=None,sumOver=None):
-		return self.aggVarWeightedSum(var,weights,mapping,aggBy,replaceWith,checkUnique).groupby([x for x in var.index.names if x not in sumOver]).sum()
+	def aggVarWeightedSum_gb(var,mapping,aggBy,replaceWith,checkUnique,weights=None,sumOver=None):
+		return aggregateDB.aggVarWeightedSum(var,weights,mapping,aggBy,replaceWith,checkUnique).groupby([x for x in var.index.names if x not in sumOver]).sum()
 	
-	def aggVarLambda(self, var, mapping, aggBy, replaceWith,checkUnique, lambda_=None):
+	def aggVarLambda(var, mapping, aggBy, replaceWith,checkUnique, lambda_=None):
 		o,d1,d2 = overlaps(var,mapping)
 		if checkUnique:
-			self._checkUnique(var.index,mapping,o,d1,d2,aggBy,replaceWith,var.name)
-		return self.aggReplace(var,mapping,aggBy,replaceWith,o).rename_axis(index={replaceWith: aggBy}).groupby(var.index).sum(lambda_).rename(var.name)
+			aggregateDB._checkUnique(var.index,mapping,o,d1,d2,aggBy,replaceWith,var.name)
+		return aggregateDB.aggReplace(var,mapping,aggBy,replaceWith,o).rename_axis(index={replaceWith: aggBy}).groupby(var.index).sum(lambda_).rename(var.name)
 	
-	def _checkUnique(self, index1,index2,o,d1,d2,aggBy,replaceWith,name):
+	def _checkUnique(index1,index2,o,d1,d2,aggBy,replaceWith,name):
 		mi1,mi2 = index1.to_frame().droplevel(d1), index2.reorder_levels(o+d2).to_frame().droplevel(d2)[d2]
 		if d2:
-			if max(rc_pd(mi2,mi1).groupby(mi2.index.names).nunique()[replaceWith])>1:
+			if max(adj.rc_pd(mi2,mi1).groupby(mi2.index.names).nunique()[replaceWith])>1:
 				print(f"""**** Warning: The symbol {name} used 'many-to-many' or 'many-to-one'-mapping. Aggregation usually assumes 'one-to-many'.""")
 	
-	def aggReplace(self,s,mapping,aggBy,replaceWith,overlap):
+	def aggReplace(s,mapping,aggBy,replaceWith,overlap):
 		return adjMultiIndex.applyMult(s,mapping.droplevel([v for v in mapping.names if v not in [replaceWith]+overlap])).droplevel(aggBy)

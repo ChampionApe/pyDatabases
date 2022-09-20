@@ -145,10 +145,13 @@ class adj:
 			return symbol.to_frame().set_index(adj.AdjAliasInd(adj.AdjLagInd(symbol.index, lag=lag), alias=alias),verify_integrity=False).iloc[:,0]
 		elif isinstance(symbol, pd.DataFrame):
 			return symbol.set_index(adj.AdjAliasInd(adj.AdjLagInd(symbol.index, lag=lag), alias=alias),verify_integrity=False)
+		elif hasattr(symbol,'vals'):
+			return adj.rc_AdjPd(symbol.vals, alias = alias, lag = lag)
 		elif isinstance(symbol, _numtypes):
 			return symbol
 		else:
-			raise TypeError(f"rc_AdjPd only uses instances {_adj_admissable_types} (and no scalars). Input was type {type(symbol)}")
+			raise TypeError(f"rc_AdjPd only uses instances {_adj_admissable_types} or gpy. Input was type {type(symbol)}")
+
 	@staticmethod
 	def AdjLagInd(index_,lag=None):
 		if lag:
@@ -163,19 +166,14 @@ class adj:
 		alias = noneInit(alias,{})
 		return index_.set_names([x if x not in alias else alias[x] for x in index_.names])
 	
-
 	@staticmethod
 	def rc_pd(s=None,c=None,alias=None,lag=None, pm = True, **kwargs):
-		if isinstance(s,_numtypes):
-			return s
-		else:
-			return adj.rctree_pd(s=s, c = c, alias = alias, lag = lag, pm = pm, **kwargs)
+		return s if isinstance(s, _numtypes) else adj.rctree_pd(s=s, c = c, alias = alias, lag = lag, pm = pm, **kwargs)
+
 	@staticmethod
 	def rc_pdInd(s=None,c=None,alias=None,lag=None,pm=True,**kwargs):
-		if isinstance(s,_numtypes):
-			return None
-		else:
-			return adj.rctree_pdInd(s=s,c=c,alias=alias,lag=lag,pm=pm,**kwargs)
+		return None if isinstance(s,_numtypes) else adj.rctree_pdInd(s=s,c=c,alias=alias,lag=lag,pm=pm,**kwargs)
+
 	@staticmethod
 	def rctree_pd(s=None,c=None,alias=None,lag =None, pm = True, **kwargs):
 		a = adj.rc_AdjPd(s,alias=alias,lag=lag)
@@ -192,7 +190,7 @@ class adj:
 			return getIndex(a)[adj.point(getIndex(a),c)]
 	@staticmethod
 	def point_pm(pdObj,vi,pm):
-		if isinstance(vi,_adj_admissable_types):
+		if isinstance(vi ,_adj_admissable_types) or hasattr(vi, 'vals'):
 			return adj.bool_ss_pm(pdObj,getIndex(vi),pm)
 		elif isinstance(vi,dict):
 			return adj.bool_ss_pm(pdObj,adj.rctree_pdInd(**vi),pm)
@@ -202,7 +200,7 @@ class adj:
 			return pdObj == pdObj
 	@staticmethod
 	def point(pdObj, vi):
-		if isinstance(vi, _adj_admissable_types):
+		if isinstance(vi ,_adj_admissable_types) or hasattr(vi, 'vals'):
 			return adj.bool_ss(pdObj,getIndex(vi))
 		elif isinstance(vi,dict):
 			return adj.bool_ss(pdObj,adj.rctree_pdInd(**vi))
@@ -255,22 +253,20 @@ class adj:
 
 ### -------- 	4: Broadcasting methods    -------- ###
 class adjMultiIndexDB:
-	def __init__(self, db):
-		self.db = db
-
-	def bc(self,x,symbols,fill_value=0, sort_levels=None):
-		v = self.sparsedomain([x]+symbols if is_iterable(symbols) else [x+symbols]).add(x,fill_value=fill_value).rename(x.name)
+	@staticmethod
+	def bc(db,x,symbols,fill_value=0, sort_levels=None):
+		v = adjMultiIndexDB.sparsedomain(db,[x]+symbols if is_iterable(symbols) else [x+symbols]).add(x,fill_value=fill_value).rename(x.name)
 		return v if sort_levels is None else v.reorder_levels(sort_levels)
-
-	def mergeDomains(self,symbols,c=None,sort_levels=None):
-		v = self.sparsedomain(symbols, c = ('and', symbols) if c is None else c).dropna().index
+	@staticmethod
+	def mergeDomains(symbols,db,c=None,sort_levels=None):
+		v = adjMultiIndexDB.sparsedomain(db,symbols, c = ('and', symbols) if c is None else c).dropna().index
 		return v if sort_levels is None else v.reorder_levels(sort_levels)
-
-	def sparsedomain(self, vlist, c=None):
-		return pd.Series(0, index = adj.rc_pdInd(self.initindex_fromproduct(domains_vlist(vlist),self.db), c))
-	
-	def initindex_fromproduct(self, domains):
-		return pd.MultiIndex.from_product([self.db.get(s) for s in domains]) if len(domains)>1 else self.db.get(domains[0])
+	@staticmethod
+	def sparsedomain(db, vlist, c=None):
+		return pd.Series(0, index = adj.rc_pdInd(adjMultiIndexDB.initindex_fromproduct(db,domains_vlist(vlist)), c))
+	@staticmethod	
+	def initindex_fromproduct(db, domains):
+		return pd.MultiIndex.from_product([db.get(s) for s in domains]) if len(domains)>1 else db.get(domains[0])
 
 class adjMultiIndex:
 	@staticmethod
@@ -313,4 +309,3 @@ class adjMultiIndex:
 			return pd.DataFrame(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi).T, index = v0.index, columns = index).stack().rename(name).reorder_levels(index.names+v0.index.names if sort_levels is None else sort_levels)
 		else:
 			return pd.Series(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi), index = index,name=name)
-	

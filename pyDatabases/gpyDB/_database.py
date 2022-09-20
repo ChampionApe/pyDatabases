@@ -30,9 +30,9 @@ def tryint(x):
 		return x
 
 ### -------- 	1: Identify types    -------- ###
-def type_pandas_(symbol,name=None,gtype=None,**kwargs):
+def type_pandas_(symbol,name=None,type=None,**kwargs):
 	if isinstance(symbol, pd.Series):
-		return gtype if gtype else 'variable'
+		return type if type else 'variable'
 	elif isinstance(symbol,pd.MultiIndex):
 		return 'mapping'
 	elif isinstance(symbol,pd.Index):
