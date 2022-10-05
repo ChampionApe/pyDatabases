@@ -11,7 +11,12 @@ def dict_from_GmdDatabase(db_gmd,g2np):
 	return {NameFromGmd(db_gmd, s): gpy(gpydict_from_GmdSymbol(db_gmd,g2np,s)) for s in syms if IsGmdSymbolNotAliasEq(db_gmd, s)} | {'alias_': gpydict_Alias_from_Gmd(db_gmd, syms, rc)}
 
 def gams_from_db_py(db_py,db_gams,g2np,merge=False):
-	[gpy2db_gams_AOM(s,db_gams,g2np,merge=merge) for s in db_py];
+	if merge == 'clear':
+		db_gams.clear()
+		[gpy2db_gams_AOM(s,db_gams,g2np,merge=False) for s in db_py];
+	else:
+		[gpy2db_gams_AOM(s,db_gams,g2np,merge=False) for s in db_py];
+		
 
 class SeriesDB:
 	""" Basically a wrapper that makes sure that iter works through self.database.values()"""
@@ -224,6 +229,9 @@ class GpyDB:
 		return {set_i: [k for k,v in self.getTypes(noneInit(types,['variable','parameter'])).items() if set_i in v.domains] for set_i in self.alias_all(set_)}
 
 	def merge_internal(self,merge=True):
-		gams_from_db_py(self.series,self.database,self.g2np,merge=merge)
-
-
+		if merge == 'replace':
+			self.name = self.versionized_name(self.name)
+			self.database = self.ws.add_database(database_name=self.name)
+			[AddSymbol2db_gams(s,self.database,self.g2np) for s in self.series];
+		else:
+			gams_from_db_py(self.series,self.database,self.g2np,merge=merge)

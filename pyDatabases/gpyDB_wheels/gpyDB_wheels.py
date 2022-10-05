@@ -23,7 +23,7 @@ class read:
 	@staticmethod
 	def SeriesDB_from_wb(workbook, kwargs, spliton='/'):
 		""" 'read' should be a dictionary with keys = method, value = list of sheets to apply this to."""
-		wb = simpleLoad(workbook) if isinstance(workbook,str) else workbook
+		wb = read.simpleLoad(workbook) if isinstance(workbook,str) else workbook
 		db = SeriesDB()
 		[robust.merge_dbs_GpyDB(db,getattr(read, function)(wb[sheet],spliton=spliton)) for function, sheets in kwargs.items() for sheet in sheets];
 		return db
@@ -214,13 +214,19 @@ class aggregateDB:
 	# 4. updateSets: For existing database clean up set definitions and use 'readSets' method to redefine sets.
 	# 5. subset_db: Subset all symbols in database. 
 	# 6. Aggregate database according to mapping. 
-	def updateSetValues(db,set_,ns):
+	def updateSetValues(db,set_,ns, remove_unused_levels=False):
 		""" Update set values for 'set_' using the namespace 'ns' """
 		full_map = {k:k if k not in ns else ns[k] for k in db[set_]}
+		if remove_unused_levels:
+			aggregateDB.remove_unused_levels(db)
 		for k,v in db.vardom(set_,types=['set','subset','mapping','parameter','variable']).items():
 			[aggregateDB.updateSetValue_Symbol(db,k,s,full_map) for s in v];
+
+	def remove_unused_levels(db):
+		[db.__setitem__(k, db.get(k).remove_unused_levels()) for k in db.getTypes(types=['mapping'])];
+		[db.get(k).__setattr__('index', db.get(k).index.remove_unused_levels()) for k in db.getTypes(types=['parameter','variable']) if isinstance(db[k].index, pd.MultiIndex)];
 	
-	def updateSetValue_Symbol(db,set_,s,ns):
+	def updateSetValue_Symbol(db,set_,s,ns,remove_unused_levels=False):
 		if not db.get(s).empty:
 			if isinstance(db.get(s),pd.MultiIndex):
 				db[s].vals = db.get(s).set_levels(db.get(s).levels[db[s].domains.index(set_)].map(ns),level=set_)

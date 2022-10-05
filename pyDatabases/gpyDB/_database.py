@@ -219,7 +219,7 @@ def gamsdb_symbols(db):
 def gpy2db_gams(s,symbolPtr,db,g2np,merge=False):
 	if s.type in ('set','subset','mapping'):
 		g2np.gmdFillSymbolStr(db,symbolPtr,set2np(s),merge=merge)
-	elif s.type == 'pscalar':
+	elif s.type == 'scalar_parameter':
 		g2np.gmdFillSymbolStr(db,symbolPtr,pscalar2np(s),merge=merge)
 	elif s.type == 'parameter':
 		g2np.gmdFillSymbolStr(db,symbolPtr,parameter2np(s),merge=merge)
