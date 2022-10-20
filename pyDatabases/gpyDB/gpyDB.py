@@ -15,7 +15,7 @@ def gams_from_db_py(db_py,db_gams,g2np,merge=False):
 		db_gams.clear()
 		[gpy2db_gams_AOM(s,db_gams,g2np,merge=False) for s in db_py];
 	else:
-		[gpy2db_gams_AOM(s,db_gams,g2np,merge=False) for s in db_py];
+		[gpy2db_gams_AOM(s,db_gams,g2np,merge=merge) for s in db_py];
 		
 
 class SeriesDB:
@@ -235,3 +235,5 @@ class GpyDB:
 			[AddSymbol2db_gams(s,self.database,self.g2np) for s in self.series];
 		else:
 			gams_from_db_py(self.series,self.database,self.g2np,merge=merge)
+
+

@@ -5,7 +5,7 @@ with open("README.md", "r") as file:
 
 setuptools.setup(
   name="pyDatabases",
-  version="0.0.2",
+  version="0.0.3",
   author="Rasmus K. Skjødt Berg",
   author_email="rasmus.kehlet.berg@econ.ku.dk",
   description="Small collection of database classes based primarily pandas, secondarily scipy and GAMS.",

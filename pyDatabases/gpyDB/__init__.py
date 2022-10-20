@@ -1,1 +1,1 @@
-from .gpyDB import gpy, GpyDB
+from .gpyDB import gpy, GpyDB, SeriesDB
