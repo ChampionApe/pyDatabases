@@ -325,7 +325,7 @@ class aggregateDB:
 		[db.__setitem__(k, aggregateDB.aggDB_set(k, mapping, aggBy, replaceWith)) for k in db.vardom(aggBy,types=['set'])];
 		[db.__setitem__(vi, aggregateDB.aggDB_subset(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith, checkUnique)) for k,v in db.vardom(aggBy, types=['subset']).items() for vi in v];
 		[db.__setitem__(vi, aggregateDB.aggDB_mapping(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith, checkUnique)) for k,v in db.vardom(aggBy, types=['mapping']).items() for vi in v];
-		[db.__setitem__(vi, getattr(db,AggLike[vi][0])(db.get(vi),mapping.set_names(k,level=aggBy),k,replaceWith,checkUnique,**AggLike[vi][1])) for k,v in db.vardom(aggBy).items() for vi in v];
+		[db.__setitem__(vi, getattr(aggregateDB,f'aggVar{AggLike[vi][0]}')(db.get(vi),mapping.set_names(k,level=aggBy),k,replaceWith,checkUnique,**AggLike[vi][1])) for k,v in db.vardom(aggBy).items() for vi in v];
 		return db
 
 	def aggDB_set(k, mapping, aggBy, replaceWith):

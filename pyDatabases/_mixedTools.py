@@ -102,6 +102,14 @@ def ndarray_or_1darray(ndarray, indices, i):
 def concatArrays(ndarray, indices):
 	return np.concatenate(tuple(ndarray_or_1darray(ndarray, indices, i) for i in range(len(indices))), axis=1)
 
+def pdGb(x, by):
+	if is_iterable(by):
+		return x.groupby([k for k in x.index.names if k not in by])
+	else:
+		return x.groupby([k for k in x.index.names if k != by])
+def pdSum(x,sumby):
+	return pdGb(x, sumby).sum() if isinstance(x.index, pd.MultiIndex) else sum(x)
+
 class OrdSet:
 	def __init__(self,i=None):
 		self.v = list(dict.fromkeys(noneInit(i,[])))
@@ -286,12 +294,20 @@ class adjMultiIndex:
 	def applyMult(symbol, mapping):
 		""" Apply 'mapping' to a symbol using multiindex """
 		if isinstance(symbol,pd.Index):
-			return (pd.Series(0, index = symbol).add(pd.Series(0, index = adj.rc_pd(mapping,symbol)))).dropna().index.reorder_levels(symbol.names+[k for k in mapping.names if k not in symbol.names])
+			try: 
+				return (pd.Series(0, index = symbol).add(pd.Series(0, index = adj.rc_pd(mapping,symbol)))).dropna().index.reorder_levels(symbol.names+[k for k in mapping.names if k not in symbol.names])
+			except KeyError:
+				return adhocFix_pandasRemovesIndexLevels(symbol,mapping)
 		elif isinstance(symbol,pd.Series):
 			if symbol.empty:
 				return pd.Series([], index = pd.MultiIndex.from_tuples([], names = symbol.index.names + [k for k in mapping.names if k not in symbol.index.names]))
-			else: 
-				return symbol.add(pd.Series(0, index = adj.rc_pd(mapping,symbol))).reorder_levels(symbol.index.names+[k for k in mapping.names if k not in symbol.index.names])
+			else:
+				s = symbol.add(pd.Series(0, index = adj.rc_pd(mapping,symbol)))
+				try: 
+					return s.reorder_levels(symbol.index.names+[k for k in mapping.names if k not in symbol.index.names])
+				except KeyError:
+					s.index = adhocFix_pandasRemovesIndexLevels(s.index, mapping)
+					return s
 	@staticmethod
 	def grid(v0,vT,index,gridtype='linear',phi=1):
 		""" If v0, vT are 1d numpy arrays, returns 2d array. If scalars, returns 1d arrays. """
@@ -309,3 +325,10 @@ class adjMultiIndex:
 			return pd.DataFrame(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi).T, index = v0.index, columns = index).stack().rename(name).reorder_levels(index.names+v0.index.names if sort_levels is None else sort_levels)
 		else:
 			return pd.Series(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi), index = index,name=name)
+
+def adhocFix_pandasRemovesIndexLevels(symbol, mapping):
+	""" When multiindices are matched, redundant index levels are dropped automatically - this keeps them """
+	s1,s2 = pd.Series(0, index = symbol), pd.Series(0, index = adj.rc_pd(mapping,symbol))
+	x,y = s1.add(s2).dropna().index, s2.add(s1).dropna().index
+	x_df, y_df = x.to_frame().set_index(list(set(x.names).intersection(y.names))), y.to_frame().set_index(list(set(x.names).intersection(y.names)))
+	return pd.MultiIndex.from_frame(pd.concat([x_df, y_df], axis =1).reset_index())
