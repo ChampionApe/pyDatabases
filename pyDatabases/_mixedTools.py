@@ -291,6 +291,19 @@ class adjMultiIndex:
 		else:
 			return x
 	@staticmethod
+	def bcAdd(x,y,fill_value = 0):
+		""" broadcast domain of 'x' to conform with domain of 'y' and add"""
+		y_dom, x_dom = getDomains(y), getDomains(x)
+		if y_dom:
+			if not x_dom:
+				return y+x
+			elif set(x_dom).intersection(set(y_dom)):
+				return x.add(y, fill_value = fill_value) if (set(x_dom)-set(y_dom)) else y.add(x, fill_value=fill_value)
+			else:
+				return pd.Series(0, index = cartesianProductIndex([getIndex(x),getIndex(y)])).add(x,fill_value=fill_value).add(y, fill_value=fill_value)
+		else:
+			return x+y
+	@staticmethod
 	def applyMult(symbol, mapping):
 		""" Apply 'mapping' to a symbol using multiindex """
 		if isinstance(symbol,pd.Index):
