@@ -111,7 +111,7 @@ class GpyDB:
 			self.database = self.ws.add_database_from_gdx(db,database_name=self.name)
 		elif isinstance(db,gams.GamsDatabase):
 			self.database = self.ws.add_database(source_database=db,database_name=self.name)
-		elif isinstance(db,Gpy_DB):
+		elif isinstance(db,GpyDB):
 			self.database = self.ws.add_database(source_database=db.database,database_name=self.name)
 
 	def update_alias(self,alias=None):

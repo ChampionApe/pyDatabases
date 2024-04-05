@@ -285,7 +285,7 @@ class adjMultiIndex:
 			if not x_dom:
 				return pd.Series(x, index = y)
 			elif set(x_dom).intersection(set(y_dom)):
-				return x.add(pd.Series(0, index = y),fill_value=fill_value) if (set(x_dom)-set(y_dom)) else pd.Series(0, index = y).add(x,fill_value=fill_value)
+				return x.sort_index().add(pd.Series(0, index = y).sort_index(),fill_value=fill_value) if (set(x_dom)-set(y_dom)) else pd.Series(0, index = y).sort_index().add(x.sort_index(),fill_value=fill_value)
 			else:
 				return pd.Series(0, index = cartesianProductIndex([getIndex(x),y])).add(x,fill_value=fill_value)
 		else:
@@ -298,7 +298,7 @@ class adjMultiIndex:
 			if not x_dom:
 				return y+x
 			elif set(x_dom).intersection(set(y_dom)):
-				return x.add(y, fill_value = fill_value) if (set(x_dom)-set(y_dom)) else y.add(x, fill_value=fill_value)
+				return x.sort_index().add(y.sort_index(), fill_value = fill_value) if (set(x_dom)-set(y_dom)) else y.sort_index().add(x.sort_index(), fill_value=fill_value)
 			else:
 				return pd.Series(0, index = cartesianProductIndex([getIndex(x),getIndex(y)])).add(x,fill_value=fill_value).add(y, fill_value=fill_value)
 		else:
@@ -308,14 +308,14 @@ class adjMultiIndex:
 		""" Apply 'mapping' to a symbol using multiindex """
 		if isinstance(symbol,pd.Index):
 			try: 
-				return (pd.Series(0, index = symbol).add(pd.Series(0, index = adj.rc_pd(mapping,symbol)))).dropna().index.reorder_levels(symbol.names+[k for k in mapping.names if k not in symbol.names])
+				return (pd.Series(0, index = symbol).sort_index().add(pd.Series(0, index = adj.rc_pd(mapping,symbol)).sort_index())).dropna().index.reorder_levels(symbol.names+[k for k in mapping.names if k not in symbol.names])
 			except KeyError:
 				return adhocFix_pandasRemovesIndexLevels(symbol,mapping)
 		elif isinstance(symbol,pd.Series):
 			if symbol.empty:
 				return pd.Series([], index = pd.MultiIndex.from_tuples([], names = symbol.index.names + [k for k in mapping.names if k not in symbol.index.names]))
 			else:
-				s = symbol.add(pd.Series(0, index = adj.rc_pd(mapping,symbol)))
+				s = symbol.sort_index().add(pd.Series(0, index = adj.rc_pd(mapping,symbol)).sort_index())
 				try: 
 					return s.reorder_levels(symbol.index.names+[k for k in mapping.names if k not in symbol.index.names])
 				except KeyError:
@@ -329,7 +329,7 @@ class adjMultiIndex:
 		elif gridtype=='polynomial':
 			return np.array([v0+(vT-v0)*((i-1)/(len(index)-1))**phi for i in range(1,len(index)+1)])
 	@staticmethod
-	def addGrid(v0,vT,index,name,gridtype = 'linear', phi = 1,sort_levels=None, sort_index = False):
+	def addGrid(v0,vT,index,name,gridtype = 'linear', phi = 1, sort_levels=None, sort_index = False):
 		""" NB: Make sure that v0 and vT are sorted similarly (if they are defined over indices, that is) """
 		if sort_index:
 			v0 = v0.sort_index()

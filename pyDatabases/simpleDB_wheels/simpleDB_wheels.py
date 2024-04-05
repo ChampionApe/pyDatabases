@@ -18,7 +18,8 @@ class read:
 			in_mem_file = io.BytesIO(file.read())
 		return openpyxl.load_workbook(in_mem_file,read_only=True,data_only=True)
 
-	def sheetnames_from_wb(self, wb):
+	@staticmethod
+	def sheetnames_from_wb(wb):
 		return (sheet.title for sheet in wb._sheets)
 
 	@staticmethod
