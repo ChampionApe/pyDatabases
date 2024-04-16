@@ -5,7 +5,7 @@ with open("README.md", "r") as file:
 
 setuptools.setup(
   name="pyDatabases",
-  version="0.0.6",
+  version="0.1.0",
   author="Rasmus K. Skjødt Berg",
   author_email="rasmus.kehlet.berg@econ.ku.dk",
   description="Small collection of database classes based primarily pandas, secondarily scipy and GAMS.",
@@ -17,6 +17,6 @@ setuptools.setup(
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
   ],
-  python_requires='>=3.8',
-  install_requires=["pandas", "scipy","openpyxl"],
+  python_requires='>=3.10',
+  install_requires=["pandas>=2", "scipy>=1.1","openpyxl"],
 )

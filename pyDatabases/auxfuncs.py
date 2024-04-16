@@ -4,14 +4,15 @@ from six import string_types
 _numtypes = (int,float,np.generic)
 _adj_admissable_types = (pd.Index, pd.Series, pd.DataFrame)
 
-# Content:
-# 0. Small auxiliary functions
-# 1. cartesianProductIndex: Creates sparse, cartesian product from iterator of indices.
-# 2. OrdSet: A small class that works like an ordered set.
-# 3. adj: A small class used to subset and adjust pandas-like symbols.
-# 4. adjMultiIndexDB, adjMultiIndex: A couple of classes that helps broadcasting pandas symbols defined over different indices.
+def tryIntIdx(idx):
+	return idx.set_levels([tryIntIdx1d(i) for i in idx.levels])
 
-### -------- 	0: Small, auxiliary functions    -------- ###
+def tryIntIdx1d(idx):
+	try:
+		return idx.astype(int)
+	except ValueError:
+		return idx
+
 def tryint(x):
 	try:
 		return int(x)
@@ -110,6 +111,10 @@ def pdGb(x, by):
 def pdSum(x,sumby):
 	return pdGb(x, sumby).sum() if isinstance(x.index, pd.MultiIndex) else sum(x)
 
+def readSetsFromDb(db, types = None):
+	""" Read sets from database symbols """
+	[db.addOrMerge(set_, getIndex(symbol).get_level_values(set_).unique()) for symbol in db.getTypes(noneInit(types,['var'])).values() for set_ in getIndex(symbol).names];
+
 class OrdSet:
 	def __init__(self,i=None):
 		self.v = list(dict.fromkeys(noneInit(i,[])))
@@ -135,8 +140,20 @@ class OrdSet:
 	def union(self,*args):
 		return OrdSet(self.__add__([x for l in args for x in l]))
 
-	def intersection(self,*args):
-		return OrdSet([x for l in self.union(args) for x in l if x in self.v])
+	@staticmethod
+	def intersection_(s, ss):
+		s.v = [x for x in s if x in ss]
+		return s
+
+	def intersection(self, *args):
+		out = self.copy()
+		[OrdSet.intersection_(out, x) for x in args]
+		return out
+
+	@staticmethod
+	def partition(s, ss):
+		overlap = OrdSet.intersection(s, ss)
+		return (overlap, s-overlap, ss-overlap)
 
 	def update(self,*args):
 		self.v = self.union(*args).v
@@ -145,6 +162,20 @@ class OrdSet:
 		return OrdSet(self.v.copy())
 
 class adj:
+	@staticmethod
+	def rc_AdjGpy(s, c = None, alias = None, lag = None, pm = True, **kwargs):
+		if c is None:
+			return adj.AdjGpy(s,alias=alias, lag = lag)
+		else:
+			copy = s.copy()
+			copy.vals = adj.rc_pd(s=s,c=c,alias=alias,lag=lag,pm=pm)
+			return copy
+	@staticmethod
+	def AdjGpy(symbol, alias = None, lag = None):
+		copy = symbol.copy()
+		copy.vals = adj.rc_AdjPd(symbol.vals, alias=alias, lag = lag)
+		return copy
+
 	@staticmethod
 	def rc_AdjPd(symbol, alias = None, lag = None):
 		if isinstance(symbol, pd.Index):
@@ -260,22 +291,6 @@ class adj:
 			return ~l
 
 ### -------- 	4: Broadcasting methods    -------- ###
-class adjMultiIndexDB:
-	@staticmethod
-	def bc(db,x,symbols,fill_value=0, sort_levels=None):
-		v = adjMultiIndexDB.sparsedomain(db,[x]+symbols if is_iterable(symbols) else [x+symbols]).add(x,fill_value=fill_value).rename(x.name)
-		return v if sort_levels is None else v.reorder_levels(sort_levels)
-	@staticmethod
-	def mergeDomains(symbols,db,c=None,sort_levels=None):
-		v = adjMultiIndexDB.sparsedomain(db,symbols, c = ('and', symbols) if c is None else c).dropna().index
-		return v if sort_levels is None else v.reorder_levels(sort_levels)
-	@staticmethod
-	def sparsedomain(db, vlist, c=None):
-		return pd.Series(0, index = adj.rc_pdInd(adjMultiIndexDB.initindex_fromproduct(db,domains_vlist(vlist)), c))
-	@staticmethod	
-	def initindex_fromproduct(db, domains):
-		return pd.MultiIndex.from_product([db.get(s) for s in domains]) if len(domains)>1 else db.get(domains[0])
-
 class adjMultiIndex:
 	@staticmethod
 	def bc(x,y,fill_value = 0):
@@ -285,11 +300,12 @@ class adjMultiIndex:
 			if not x_dom:
 				return pd.Series(x, index = y)
 			elif set(x_dom).intersection(set(y_dom)):
-				return x.sort_index().add(pd.Series(0, index = y).sort_index(),fill_value=fill_value) if (set(x_dom)-set(y_dom)) else pd.Series(0, index = y).sort_index().add(x.sort_index(),fill_value=fill_value)
+				return x.add(pd.Series(y, index = y), fill_value =fill_value) if (set(x_dom)-set(y_dom)) else pd.Series(0, index = y).add(x,fill_value=fill_value)
 			else:
 				return pd.Series(0, index = cartesianProductIndex([getIndex(x),y])).add(x,fill_value=fill_value)
 		else:
 			return x
+
 	@staticmethod
 	def bcAdd(x,y,fill_value = 0):
 		""" broadcast domain of 'x' to conform with domain of 'y' and add"""
@@ -298,29 +314,27 @@ class adjMultiIndex:
 			if not x_dom:
 				return y+x
 			elif set(x_dom).intersection(set(y_dom)):
-				return x.sort_index().add(y.sort_index(), fill_value = fill_value) if (set(x_dom)-set(y_dom)) else y.sort_index().add(x.sort_index(), fill_value=fill_value)
+				return x.add(y, fill_value = fill_value) if (set(x_dom)-set(y_dom)) else y.add(x, fill_value=fill_value)
 			else:
 				return pd.Series(0, index = cartesianProductIndex([getIndex(x),getIndex(y)])).add(x,fill_value=fill_value).add(y, fill_value=fill_value)
 		else:
 			return x+y
+
+	@staticmethod
+	def applyMultIdx(idx, mapping):
+		return pd.Series(0, index = idx).add(pd.Series(0, index = adj.rc_pd(mapping, idx))).dropna().index.reorder_levels(idx.names+[k for k in mapping.names if k not in idx.names])
+
+	@staticmethod
+	def applyMultSrs(s, mapping):
+		if s.empty:
+			return pd.Series([], index = pd.MultiIndex.from_tuples([], names = s.index.names + [k for k in mapping.names if k not in s.index.names]))
+		else:
+			return s.add(pd.Series(0, index = adj.rc_pd(mapping,s)))
+
 	@staticmethod
 	def applyMult(symbol, mapping):
-		""" Apply 'mapping' to a symbol using multiindex """
-		if isinstance(symbol,pd.Index):
-			try: 
-				return (pd.Series(0, index = symbol).sort_index().add(pd.Series(0, index = adj.rc_pd(mapping,symbol)).sort_index())).dropna().index.reorder_levels(symbol.names+[k for k in mapping.names if k not in symbol.names])
-			except KeyError:
-				return adhocFix_pandasRemovesIndexLevels(symbol,mapping)
-		elif isinstance(symbol,pd.Series):
-			if symbol.empty:
-				return pd.Series([], index = pd.MultiIndex.from_tuples([], names = symbol.index.names + [k for k in mapping.names if k not in symbol.index.names]))
-			else:
-				s = symbol.sort_index().add(pd.Series(0, index = adj.rc_pd(mapping,symbol)).sort_index())
-				try: 
-					return s.reorder_levels(symbol.index.names+[k for k in mapping.names if k not in symbol.index.names])
-				except KeyError:
-					s.index = adhocFix_pandasRemovesIndexLevels(s.index, mapping)
-					return s
+		return adjMultiIndex.applyMultIdx(symbol, mapping) if isinstance(symbol, pd.Index) else adjMultiIndex.applyMultSrs(symbol, mapping)
+
 	@staticmethod
 	def grid(v0,vT,index,gridtype='linear',phi=1):
 		""" If v0, vT are 1d numpy arrays, returns 2d array. If scalars, returns 1d arrays. """
@@ -328,6 +342,7 @@ class adjMultiIndex:
 			return np.linspace(v0,vT,len(index))
 		elif gridtype=='polynomial':
 			return np.array([v0+(vT-v0)*((i-1)/(len(index)-1))**phi for i in range(1,len(index)+1)])
+
 	@staticmethod
 	def addGrid(v0,vT,index,name,gridtype = 'linear', phi = 1, sort_levels=None, sort_index = False):
 		""" NB: Make sure that v0 and vT are sorted similarly (if they are defined over indices, that is) """
@@ -339,9 +354,9 @@ class adjMultiIndex:
 		else:
 			return pd.Series(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi), index = index,name=name)
 
-def adhocFix_pandasRemovesIndexLevels(symbol, mapping):
-	""" When multiindices are matched, redundant index levels are dropped automatically - this keeps them """
-	s1,s2 = pd.Series(0, index = symbol), pd.Series(0, index = adj.rc_pd(mapping,symbol))
-	x,y = s1.add(s2).dropna().index, s2.add(s1).dropna().index
-	x_df, y_df = x.to_frame().set_index(list(set(x.names).intersection(y.names))), y.to_frame().set_index(list(set(x.names).intersection(y.names)))
-	return pd.MultiIndex.from_frame(pd.concat([x_df, y_df], axis =1).reset_index())
+def emptyCopy(obj):
+	class Empty(obj.__class__):
+		def __init__(self): pass
+	newcopy = Empty()
+	newcopy.__class__ = obj.__class__
+	return newcopy

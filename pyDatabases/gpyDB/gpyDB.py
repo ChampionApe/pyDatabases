@@ -1,54 +1,26 @@
-from ._database import *
+from .database import *
+from gams.core.numpy import gams2numpy
+import os, pickle, openpyxl, io
+
 admissable_gpy_types = (pd.Series,pd.Index,int,float,str,np.generic,dict,gpy)
 
-# A few useful database functions
-def dict_from_GamsDatabase(db_gams,g2np):
-	return {symbol.name: gpy(gpydict_from_GamsSymbol(db_gams, g2np, symbol)) for symbol in db_gams if type(symbol) in admissable_gamsTypes}
+def sunion_empty(ls):
+	""" return empty set if the list of sets (ls) is empty"""
+	try:
+		return set.union(*ls)
+	except TypeError:
+		return set()
 
-def dict_from_GmdDatabase(db_gmd,g2np):
-	rc = gmdcc.new_intp()
-	syms = (gmdcc.gmdGetSymbolByNumberPy(db_gmd, i, rc) for i in range(gmdcc.gmdInfo(db_gmd, gmdcc.GMD_NRSYMBOLSWITHALIAS)[1]))
-	return {NameFromGmd(db_gmd, s): gpy(gpydict_from_GmdSymbol(db_gmd,g2np,s)) for s in syms if IsGmdSymbolNotAliasEq(db_gmd, s)} | {'alias_': gpydict_Alias_from_Gmd(db_gmd, syms, rc)}
-
-def gams_from_db_py(db_py,db_gams,g2np,merge=False):
-	if merge == 'clear':
-		db_gams.clear()
-		[gpy2db_gams_AOM(s,db_gams,g2np,merge=False) for s in db_py];
+def versionizeName(name, d):
+	""" If name is already used in 'd' - then try versionized name (adding +1.)"""
+	if name not in d:
+		return name
 	else:
-		[gpy2db_gams_AOM(s,db_gams,g2np,merge=merge) for s in db_py];
-		
+		partitions = [int(x.rpartition(name+'__v')[-1]) for x in d if ifInt(x.rpartition(name+'__v')[-1])]
+		return name+'__v'+str(max(partitions)+1) if partitions else name+'__v1'
 
-class SeriesDB:
-	""" Basically a wrapper that makes sure that iter works through self.database.values()"""
-	def __init__(self,database=None):
-		self.database = noneInit(database,{})
-
-	def __iter__(self):
-		return iter(self.database.values())
-
-	def __len__(self):
-		return len(self.database)
-
-	def __getitem__(self,item):
-		return self.database[item]
-
-	def __setitem__(self,item,value):
-		if item in self.database:
-			if not is_iterable(value) and is_iterable(self[item].vals):
-				value = pd.Series(value,index=self[item].index,name=self[item].name)
-		self.database[item] = gpy(value,**{'name': item})
-
-	def __delitem__(self,item):
-		del(self.database[item])
-
-	def get(self, item):
-		return self.database[item].vals
-
-	def copy(self):
-		obj = type(self).__new__(self.__class__,None)
-		obj.__dict__.update({k:v for k,v in self.__dict__.items() if k != 'database'})
-		obj.database = {k:gpy(v) for k,v in self.database.items()}
-		return obj
+def partitionDoms(s, ss):
+	return OrdSet.partition(OrdSet(getDomains(s)), OrdSet(getDomains(ss)))
 
 class GpyDB:
 	def __init__(self,pickle_path=None,ws=None,db=None,alias=None,**kwargs):
@@ -57,45 +29,43 @@ class GpyDB:
 							(3) db = dict (fast, but does not check validity of attributes. only uses 'ws','alias'), 
 							(4) db ∈ {None, str, gams.GamsDatabase} (slower, but more robust. uses all kwargs except 'pickle_path'); """ 
 		if pickle_path is not None:
-			self.init_from_pickle(pickle_path,ws=ws)
+			self.initFromPickle(pickle_path,ws=ws)
 		elif isinstance(db,dict):
-			self.update_with_ws(ws,db)
+			self.updateWithWs(ws,db)
 		elif isinstance(db,GpyDB):
-			self.init_from_GpyGB(db,ws=ws)
+			self.initFromGpyGB(db,ws=ws)
 		else:
-			self.init_ws(ws)
+			self.initWs(ws)
 			self.g2np = gams2numpy.Gams2Numpy(self.ws.system_directory)
-			self.name = self.versionized_name(dictInit('name','rname',kwargs))
-			self.export_settings = {'dropattrs': ['database','ws','g2np'], 'data_folder': dictInit('data_folder',os.getcwd(),kwargs)}
-			self.init_dbs(db)
-			self.series = SeriesDB(database=dict_from_GamsDatabase(self.database,self.g2np))
-		self.update_alias(alias=alias)
+			self.name = versionizeName(dictInit('name', 'rname',kwargs), self.ws._gams_databases)
+			self.exportSettings = {'dropattrs': ['database','ws','g2np','gmd'], 'data_folder': dictInit('data_folder',os.getcwd(),kwargs)}
+			self.initDbs(db)
+			self.gmd = readGmd(self.database, self.g2np)
+			self.series = SeriesDB(database=self.gmd())
+		self.updateAlias(alias=alias)
 
 	###################################################################################################
 	###									0: Pickling/load/export settings 							###
 	###################################################################################################
-	def versionized_name(self,name):
-		""" test if name is available in the current ws; update with an added if it is not """
-		return return_version(name,self.ws._gams_databases)
 
-	def init_from_pickle(self,pickle_path,ws=None):
+	def initFromPickle(self,pickle_path,ws=None):
 		with open(pickle_path,"rb") as file:
 			pickled_data=pickle.load(file)
-		self.update_with_ws(ws,pickled_data.__dict__)
+		self.updateWithWs(ws,pickled_data.__dict__)
 
-	def init_from_GpyGB(self,db,ws=None):
-		self.update_with_ws(ws,db.__dict__)
+	def initFromGpyGB(self,db,ws=None):
+		self.updateWithWs(ws,db.__dict__)
 
-	def update_with_ws(self,ws,dict_):
+	def updateWithWs(self,ws,dict_):
 		if ws is None:
 			self.__dict__ = dict_
 		else:
 			self.__dict__ = {key: value for key,value in dict_.items() if key not in ('ws','database')}
-			self.init_ws(ws)
-			self.name = self.versionized_name(self.name) # update name of database if it is already used in the current ws.
-			self.init_dbs(dict_['database'])
+			self.initWs(ws)
+			self.name = versionizeName(self.name, self.ws._gams_databases) # update name of database if it is already used in the current ws.
+			self.initDbs(dict_['database'])
 
-	def init_ws(self,ws):
+	def initWs(self,ws):
 		if ws is None:
 			self.ws = gams.GamsWorkspace()
 		elif type(ws) is str:
@@ -104,7 +74,7 @@ class GpyDB:
 			self.ws = ws
 		self.work_folder = self.ws.working_directory
 
-	def init_dbs(self,db):
+	def initDbs(self,db):
 		if db is None:
 			self.database = self.ws.add_database(database_name=self.name)
 		elif type(db) is str:
@@ -114,19 +84,27 @@ class GpyDB:
 		elif isinstance(db,GpyDB):
 			self.database = self.ws.add_database(source_database=db.database,database_name=self.name)
 
-	def update_alias(self,alias=None):
-		alias = pd.MultiIndex.from_tuples([],names=['alias_set','alias_map2']) if alias is None else alias.set_names(['alias_set','alias_map2'])
+	def readAlias(self, alias = None):
+		if isinstance(alias, pd.MultiIndex):
+			return alias.set_names(['alias_set','alias_map2'])
+		else:
+			if alias is None:
+				alias = []
+			return pd.MultiIndex.from_tuples(alias, names = ['alias_set','alias_map2'])
+
+	def updateAlias(self,alias=None):
+		alias = self.readAlias(alias = alias)
 		if 'alias_' not in self.series.database:
 			self.series['alias_'] = alias
 		else:
-			self.series['alias_'] = self.get('alias_').union(alias)
-		self.series['alias_set'] = self.get('alias_').get_level_values('alias_set').unique()
-		self.series['alias_map2'] = self.get('alias_').get_level_values('alias_map2').unique()
+			self.series['alias_'] = self('alias_').union(alias)
+		self.series['alias_set'] = self('alias_').get_level_values('alias_set').unique()
+		self.series['alias_map2'] = self('alias_').get_level_values('alias_map2').unique()
 
 	def __getstate__(self):
-		if 'database' not in self.export_settings['dropattrs']:
-			self.database.export(self.export_settings['data_folder']+'\\'+self.name+'.gdx')
-		return {key: value for key,value in self.__dict__.items() if key not in (self.export_settings['dropattrs']+['database'])}
+		if 'database' not in self.exportSettings['dropattrs']:
+			self.database.export(self.exportSettings['data_folder']+'\\'+self.name+'.gdx')
+		return {key: value for key,value in self.__dict__.items() if key not in (self.exportSettings['dropattrs']+['database'])}
 
 	def __setstate__(self,dict_):
 		self.__dict__ = dict_
@@ -135,16 +113,18 @@ class GpyDB:
 		except FileNotFoundError:
 			self.ws = gams.GamsWorkspace(working_directory=os.getcwd())
 		self.g2np = gams2numpy.Gams2Numpy(self.ws.system_directory)
-		if 'database' not in self.export_settings['dropattrs']:
-			self.database = self.ws.add_database_from_gdx(self.export_settings['data_folder']+'\\'+self.name+'.gdx')
+		if 'database' not in self.exportSettings['dropattrs']:
+			self.database = self.ws.add_database_from_gdx(os.path.join(self.exportSettings['data_folder'],self.name+'.gdx'))
 		else:
 			self.database = self.ws.add_database()
-		if 'series' in self.export_settings['dropattrs']:
-			self.series = SeriesDB(database=dict_from_GamsDatabase(self.database,self.g2np))
+		if 'gmd' in self.exportSettings['dropattrs']:
+			self.gmd = readGmd(self.database, self.g2np)
+		if 'series' in self.exportSettings['dropattrs']:
+			self.series = SeriesDB(database=self.gmd())
 	
 	def export(self,name=None,repo=None):
 		name = self.name if name is None else name
-		repo = self.export_settings['data_folder'] if repo is None else repo
+		repo = self.exportSettings['data_folder'] if repo is None else repo
 		with open(repo+'\\'+name, "wb") as file:
 			pickle.dump(self,file)
 
@@ -167,7 +147,7 @@ class GpyDB:
 	def __setitem__(self,name,value):
 		self.series.__setitem__(name,value)
 
-	def get(self,item):
+	def __call__(self, item):
 		try:
 			return self.series[item].vals
 		except KeyError:
@@ -180,60 +160,371 @@ class GpyDB:
 	def getTypes(self,types):
 		return {symbol.name: symbol for symbol in self.series if symbol.type in types}
 
-	def copy(self,dropattrs=None,**kwargs):
-		""" return copy of database. Ignore elements in dropattrs."""
-		db = GpyDB(**{**self.__dict__,**kwargs})
-		if 'series' not in noneInit(dropattrs,['database']) and 'series' not in kwargs.keys():
-			db.series = self.series.copy()
-		return db
+	def copy(self):
+		return deepcopy(self)
 
 	###################################################################################################
 	###									2: Dealing with aliases			 							###
 	###################################################################################################
 
 	@property
-	def alias_dict(self):
-		return {name: self.get('alias_').get_level_values(1)[self.get('alias_').get_level_values(0)==name] for name in self.get('alias_set')}
+	def aliasDict(self):
+		return {name: self('alias_').get_level_values(1)[self('alias_').get_level_values(0)==name] for name in self('alias_set')}
 
 	@property
-	def alias_dict0(self):
-		return {key: self.alias_dict[key].insert(0,key) for key in self.alias_dict}
+	def aliasDict0(self):
+		return {key: self.aliasDict[key].insert(0,key) for key in self.aliasDict}
 
 	@property
 	def alias_notin_db(self):
-		return set(self.get('alias_map2'))-set(self.getTypes(['set']))
+		return set(self('alias_map2'))-set(self.getTypes(['set']))
 
-	def alias_all(self,x):
-		if x in self.get('alias_set').union(self.get('alias_map2')):
-			return self.alias_dict0[self.alias(x)]
+	def aliasAll(self,x):
+		if x in self('alias_set').union(self('alias_map2')):
+			return self.aliasDict0[self.alias(x)]
 		else: 
 			return [x]
 
-	def alias(self,x,index_=0):
-		if x in self.get('alias_set'):
-			return self.alias_dict0[x][index_]
-		elif x in self.get('alias_map2'):
-			key = self.get('alias_').get_level_values(0)[self.get('alias_').get_level_values(1)==x][0]
-			return self.alias_dict0[key][index_]
-		elif x in self.getTypes(['set','subset','mapping']) and index_==0:
+	def alias(self,x,idx=0):
+		if x in self('alias_set'):
+			return self.aliasDict0[x][idx]
+		elif x in self('alias_map2'):
+			key = self('alias_').get_level_values(0)[self('alias_').get_level_values(1)==x][0]
+			return self.aliasDict0[key][idx]
+		elif x in self.getTypes(['set','subset','map']) and idx==0:
 			return x
 		else:
 			raise TypeError(f"{x} is not aliased")
 
-	def domains_unique(self,x):
+	def domainsUnique(self,x):
 		""" Returns list of sets a symbol x is defined over. If x is defined over a set and its alias, only the set is returned. """
 		return np.unique([self.alias(name) for name in self[x].index.names]).tolist()
 
-	def vardom(self,set_,types=None):
+	def allDoms(self, types = None):
+		return OrdSet.union(*(OrdSet(k.domains) for k in self.getTypes(noneInit(types, ['set','subset','map','par','var'])).values()))
+
+	def varDom(self,set_,types=None):
 		""" Returns a dict with keys = set_+aliases, values = list of symbols in 'types' defined over the the relevant set/alias"""
-		return {set_i: [k for k,v in self.getTypes(noneInit(types,['variable','parameter'])).items() if set_i in v.domains] for set_i in self.alias_all(set_)}
+		return {set_i: [k for k,v in self.getTypes(noneInit(types,['var','par'])).items() if set_i in v.domains] for set_i in self.aliasAll(set_)}
 
-	def merge_internal(self,merge=True):
-		if merge == 'replace':
-			self.name = self.versionized_name(self.name)
+	def mergeInternal(self, priority='second', name = None):
+		if priority == 'replace':
+			self.name = versionizeName(noneInit(name, self.name), self.ws._gams_databases)
 			self.database = self.ws.add_database(database_name=self.name)
-			[AddSymbol2db_gams(s,self.database,self.g2np) for s in self.series];
+			self.gmd = readGmd(self.database, self.g2np)
+			gmdFromGpy.initDb(self.series, self.gmd)
 		else:
-			gams_from_db_py(self.series,self.database,self.g2np,merge=merge)
+			MergeDbs.readGmd_dict(self.gmd, self.series.database, priority = priority)
 
+	def aom(self, symbol, priority='second',**kwargs):
+		self.aom_gpy(gpy(symbol, **kwargs), priority=priority)
 
+	def aom_gpy(self, symbol, priority = 'second'):
+		if symbol.name in self.series.database:
+			MergeSyms.gpy_gpy(self[symbol.name], symbol, priority=priority)
+		else:
+			self[symbol.name] = symbol
+
+class SeriesDB:
+	""" A simple dict-like database """
+	def __init__(self,database=None):
+		self.database = noneInit(database,{})
+
+	def __iter__(self):
+		return iter(self.database.values())
+
+	def __len__(self):
+		return len(self.database)
+
+	def __getitem__(self,item):
+		return self.database[item]
+
+	def __setitem__(self,item,value):
+		if item in self.database:
+			if not is_iterable(value) and is_iterable(self[item].vals):
+				value = pd.Series(value,index=self[item].index,name=self[item].name)
+		self.database[item] = gpy(value,**{'name': item})
+
+	def __delitem__(self,item):
+		del(self.database[item])
+
+	def __call__(self, item):
+		return self.database[item].vals
+
+	def copy(self):
+		return deepcopy(self)
+
+	@property
+	def symbols(self):
+		return self.database
+
+class DbFromExcel:
+	@staticmethod
+	def dbFromWB(workbook, kwargs, spliton='/'):
+		""" kwargs is a dict with key = method, value = sheet/list of sheets"""
+		""" 'read' should be a dictionary with keys = method, value = list of sheets to apply this to."""
+		wb = DbFromExcel.simpleLoad(workbook) if isinstance(workbook,str) else workbook
+		db = {}
+		[MergeDbs.merge(db, DbFromExcel.readKwarg(k, v, wb, spliton=spliton)) for k,v in kwargs.items()];
+		return db
+
+	@staticmethod
+	def readKwarg(key, value, wb, spliton = '/'):
+		if type(value) is str:
+			return getattr(DbFromExcel, key)(wb[value], spliton=spliton)
+		elif is_iterable:
+			db = {}
+			[MergeDbs.merge(db, DbFromExcel.readKwarg(key, v, wb, spliton=spliton)) for v in value];
+			return db
+
+	@staticmethod
+	def simpleLoad(workbook):
+		with open(workbook,"rb") as file:
+			in_mem_file = io.BytesIO(file.read())
+		return openpyxl.load_workbook(in_mem_file,read_only=True,data_only=True)
+
+	@staticmethod
+	def sheetnames_from_wb(wb):
+		return (sheet.title for sheet in wb._sheets)
+
+	@staticmethod
+	def set(sheet, **kwargs):
+		""" Return a dictionary with keys = set names and values = pandas objects. na entries are removed. 
+			The name of each set is defined as the first entry in each column. """
+		pd_sheet = pd.DataFrame(sheet.values)
+		return {pd_sheet.iloc[0,i]: gpy(pd.Index(pd_sheet.iloc[1:,i].dropna(),name=pd_sheet.iloc[0,i])) for i in range(pd_sheet.shape[1])}
+
+	@staticmethod
+	def subset(sheet,spliton='/'):
+		pd_sheet = pd.DataFrame(sheet.values)
+		return {pd_sheet.iloc[0,i].split(spliton)[0]: gpy(pd.Index(pd_sheet.iloc[1:,i].dropna(),name=pd_sheet.iloc[0,i].split(spliton)[1])) for i in range(pd_sheet.shape[1])}
+
+	@staticmethod
+	def aux_map(sheet,col,spliton):
+		pd_temp = sheet[col]
+		pd_temp.columns = [x.split(spliton)[1] for x in pd_temp.iloc[0,:]]
+		return pd.MultiIndex.from_frame(pd_temp.dropna().iloc[1:,:])
+
+	@staticmethod
+	def map(sheet,spliton='/'):
+		pd_sheet = pd.DataFrame(sheet.values)
+		pd_sheet.columns = [x.split(spliton)[0] for x in pd_sheet.iloc[0,:]]
+		return {col: gpy(DbFromExcel.aux_map(pd_sheet,col,spliton)) for col in set(pd_sheet.columns)}
+
+	@staticmethod
+	def aux_var(sheet,col,spliton):
+		pd_temp = sheet[col].dropna()
+		pd_temp.columns = [x.split(spliton)[1] for x in pd_temp.iloc[0,:]]
+		if pd_temp.shape[1]==2:
+			index = pd.Index(pd_temp.iloc[1:,0])
+		else:
+			index = pd.MultiIndex.from_frame(pd_temp.iloc[1:,:-1])
+		return pd.Series(pd_temp.iloc[1:,-1].values,index=index,name=col)
+
+	@staticmethod
+	def var(sheet,spliton='/'):
+		pd_sheet = pd.DataFrame(sheet.values)
+		pd_sheet.columns = [x.split(spliton)[0] for x in pd_sheet.iloc[0,:]]
+		return {col: gpy(DbFromExcel.aux_var(pd_sheet,col,spliton)) for col in set(pd_sheet.columns)}
+
+	@staticmethod
+	def par(sheet,spliton='/'):
+		pd_sheet = pd.DataFrame(sheet.values)
+		pd_sheet.columns = [x.split(spliton)[0] for x in pd_sheet.iloc[0,:]]
+		return {col: gpy(DbFromExcel.aux_var(pd_sheet,col,spliton), type = 'par') for col in set(pd_sheet.columns)}
+
+	@staticmethod
+	def scalarVar(sheet,**kwargs):
+		pd_sheet = pd.DataFrame(sheet.values)
+		return {pd_sheet.iloc[i,0]: gpy(pd_sheet.iloc[i,1], name = pd_sheet.iloc[i,0]) for i in range(pd_sheet.shape[0])}
+
+	@staticmethod
+	def scalarPar(sheet,**kwargs):
+		pd_sheet = pd.DataFrame(sheet.values)
+		return {pd_sheet.iloc[i,0]: gpy(pd_sheet.iloc[i,1], name = pd_sheet.iloc[i,0], type = 'scalarPar') for i in range(pd_sheet.shape[0])}
+
+	@staticmethod
+	def var2D(sheet,spliton='/',**kwargs):
+		""" Read in 2d variable arranged in matrix; Note, only reads 1 variable per sheet."""
+		pd_sheet = pd.DataFrame(sheet.values)
+		domains = pd_sheet.iloc[0,0].split(spliton)
+		var = pd.DataFrame(pd_sheet.iloc[1:,1:].values, index = pd.Index(pd_sheet.iloc[1:,0],name=domains[1]), columns = pd.Index(pd_sheet.iloc[0,1:], name = domains[2])).stack()
+		var.name = domains[0]
+		return {domains[0]: gpy(var)}
+
+class AggDB:
+	# Main methods:
+	# 1. updSetElements: Update name of set elements in database using a mapping (dictionary)
+	# 2. updSetNames: Update name of a set in database.
+	# 3. readSets: Add sets to the database by reading established variables/parameters/mappings.
+	# 4. updSetsFromSyms: For existing database clean up set definitions and use 'readSets' method to redefine sets.
+	# 5. subsetDB: Subset all symbols in database. 
+	# 6. aggDB: Aggregate database according to mapping. 
+	def updSetElements(db, setName, ns, rul=False):
+		full_map = {k:k if k not in ns else ns[k] for k in db[setName]}
+		if rul:
+			AggDB.remove_unused_levels(db)
+		for k,v in db.varDom(setName,types=['set','subset','map','par','var']).items():
+			[AggDB.updateSetValue_sym(db[s], k, full_map) for s in v];
+		return db
+
+	def remove_unused_levels(db):
+		[db[k].__setattr__('vals',db(k).remove_unused_levels()) for k in db.getTypes(['map'])];
+		[db(k).__setattr__('index', db(k).index.remove_unused_levels()) for k in db.getTypes(['par','var']) if isinstance(db[k].index, pd.MultiIndex)];
+	
+	def updateSetValue_sym(symbol, setName, ns):
+		return getattr(AggDB, f'updateSetValue_{symbol.type}')(symbol, setName, ns)
+	def updateSetValue_set(symbol, setName, ns):
+		symbol.vals = AggDB.updateIdxValues(symbol.vals, ns).unique()
+		return symbol
+	def updateSetValue_subset(symbol, setName, ns):
+		symbol.vals = AggDB.updateIdxValues(symbol.vals, ns).unique()
+		return symbol
+	def updateSetValue_map(symbol, setName, ns):
+		symbol.vals = AggDB.uniqueMIdx(AggDB.updateMIdxValues(symbol.vals, setName, ns))
+		return symbol
+	def updateSetValue_var(symbol, setName, ns):
+		symbol.vals.index = AggDB.updateMIdxValues(symbol.index, setName, ns) if isinstance(symbol.index, pd.MultiIndex) else AggDB.updateIdxValues(symbol.index, setName, ns)
+		return symbol
+	def updateSetValue_par(symbol, setName, ns):
+		return AggDB.updateSetValue_var(symbol, setName, ns)	
+	def updateIdxValues(idx, ns, unique = True):
+		return idx.map(ns)
+	def updateMIdxValues(idx, setName, ns):
+		return idx.set_levels(idx.levels[idx.names.index(setName)].map(ns), level = setName, verify_integrity = False)
+	def uniqueMIdx(idx):
+		return pd.MultiIndex.from_tuples(np.unique(idx.values), names = idx.names)
+
+	# ----------------------- 2. Rename set names ------------------------- #
+	def updSetNames(db, ns):
+		""" 'ns' is a dictionary with key = original set, value = new set name. This does not alter aliases (unless they are included in 'ns') """
+		[AggDB.updSetName(db,k,v) for k,v in ns.items()];
+		return db
+	
+	def updSetName(db,k,v):
+		if k in db.series.database:
+			db[k].vals = db(k).rename(v)
+			db.series.__delitem__(k)
+		[db(vi).__setattr__('index',AggDB.renameIdx(db[vi].index,k,v)) for vi in db.varDom(k,types=('var','par'))[k]];
+		[db[vi].__setattr__('vals', AggDB.renameIdx(db(vi), k ,v)) for vi in db.varDom(k,types=['map'])[k]];
+		return db
+
+	def renameIdx(idx, k, v):
+		return idx.rename({k:v}) if isinstance(idx, pd.MultiIndex) else idx.rename(v)
+
+	# ----------------------- 3-4. Read sets/update sets from database  ------------------------- #
+	def updSetsFromSyms(db, types = None, clean = True, ignore_alias = False, clean_alias = False):
+		if clean:
+			AggDB.cleanSets(db)
+		AggDB.readSets(db ,types = types, ignore_alias=ignore_alias)
+		if clean_alias:
+			AggDB.cleanAliases(db, types)
+		AggDB.readAliasedSets(db, ignore_alias)
+		if clean:
+			AggDB.updateSubsetsFromSets(db)
+			AggDB.updateMapsFromSets(db)
+		return db
+
+	def readSets(db, types=None, ignore_alias=False):
+		""" read and define set elements from all symbols of type 'types'. """
+		if ignore_alias:
+			[db.aom(gpy(symbol.index.get_level_values(setName).unique())) for symbol in db.getTypes(noneInit(types,['var','par'])).values() for setName in (set(symbol.domains)-db.alias_notin_db)];
+		else:
+			[db.aom(gpy(symbol.index.get_level_values(setName).unique())) for symbol in db.getTypes(noneInit(types,['var','par'])).values() for setName in set(symbol.domains)];
+
+	def cleanSets(db):
+		""" create empty indices for all sets  """
+		[db.__setitem__(set_, pd.Index([], name = set_)) for set_ in set(db.getTypes(['set']))-set(['alias_set','alias_map2'])];
+
+	def cleanAliases(db,types):
+		""" Remove aliases that are not used in variables/parameters """
+		db.series['alias_'] = pd.MultiIndex.from_tuples(AggDB.activeAliases(db,types), names = ['alias_set','alias_map2'])
+		db.updateAlias()
+
+	def activeAliases(db,types):
+		""" Return list of tuples with alias_ that are used in the model variables / mappings"""
+		return [(k,v) for k in db('alias_set') for v in [x for x in db.aliasDict[k] if len(db.varDom(k,types=types)[x])>0]]
+
+	def readAliasedSets(db,ignore_alias):
+		""" Read in all elements for aliased sets. If ignore alias"""
+		for set_i in db.aliasDict:
+			all_elements = sunion_empty([set(db(set_ij)) for set_ij in db.aliasDict0[set_i] if set_ij in db.getTypes(['set'])])
+			if ignore_alias:
+				[db.__setitem__(set_ij, pd.Index(all_elements,name=set_ij)) for set_ij in db.aliasDict0[set_i] if set_ij in db.getTypes(['set'])];
+			else:
+				[db.__setitem__(set_ij, pd.Index(all_elements,name=set_ij)) for set_ij in db.aliasDict0[set_i]];
+
+	def updateSubsetsFromSets(db):
+		[AggDB.updateSubset(db,ss) for ss in db.getTypes(['subset'])];
+
+	def updateSubset(db,ss):
+		if db.alias(db(ss).name) not in db.symbols:
+			db.__setitem__(ss,pd.Index([],name=db.alias(db(ss).name)))
+		else:
+			db.__setitem__(ss,adj.rctree_pd(s=db[ss],c=db[db.alias(db(ss).name)]))
+	
+	def updateMapsFromSets(db):
+		[AggDB.updateMap(db,m) for m in db.getTypes(['map'])];
+	
+	def updateMap(db,m):
+		if sum([bool(set(db.series.database.keys()).intersection(db.aliasAll(s))) for s in db[m].domains])<len(db[m].domains):
+			db.__setitem__(m, pd.MultiIndex.from_tuples([], names = db[m].domains))
+		else:
+			db.__setitem__(m, adj.rctree_pd(s=db[m], c = ('and', [db[s] for s in db[m].domains])))
+
+	# ----------------------- 5. Subset database with index ------------------------- #
+	def subsetDB(db,index):
+		[AggDB.subsetDB_valsFromList(db, index.rename(k), v) for k,v in db.varDom(index.name, types = ('set','subset','map','var','par')).items()];
+		return db
+
+	def subsetDB_valsFromList(db,index,listOfSymbols):
+		[db[symbol].__setattr__('vals', adj.rctree_pd(db(symbol), index)) for symbol in listOfSymbols];
+
+	# ----------------------- 6. Methods for aggregating database ------------------------- #
+	def aggDB(db, mapping, aggBy=None, replaceWith=None, aggLike = None):
+		""" Aggregate symbols in db according to mapping. This does so inplace, i.e. the set aggBy is altered. 
+			Note: The aggregation assumes that mapping is 'one-to-many'; if this is not the case, a warning is printed (if checkUnique) """
+		aggBy,replaceWith = noneInit(aggBy, mapping.names[0]), noneInit(replaceWith,mapping.names[-1])
+		defaultAggLike = {k: {'func': 'Sum', 'kwargs': {}} for v,l in db.varDom(aggBy, types = ['var','par']).items() for k in l}
+		aggLike = defaultAggLike if aggLike is None else defaultAggLike | aggLike
+		[db.__setitem__(k, AggDB.aggDB_set(k, mapping, aggBy, replaceWith)) for k in db.varDom(aggBy,types=['set'])]; # this alters sets and potentially aliases if they are also defined in the database
+		[db.__setitem__(vi, AggDB.aggDB_subset(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith)) for k,v in db.varDom(aggBy, types=['subset']).items() for vi in v];
+		[db.__setitem__(vi, AggDB.aggDB_mapping(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith)) for k,v in db.varDom(aggBy, types=['map']).items() for vi in v];
+		[db.__setitem__(vi, getattr(AggDB,f"aggVar{aggLike[vi]['func']}")(db(vi), mapping.set_names(k,level=aggBy),k,replaceWith,**aggLike[vi]['kwargs'])) for k,v in db.varDom(aggBy).items() for vi in v];
+		return db
+
+	def aggDB_set(k, mapping, aggBy, replaceWith):
+		return mapping.get_level_values(replaceWith).unique().rename(k)
+	
+	def aggDB_subset(db, k, mapping, aggBy, replaceWith):
+		o, d1, d2 = partitionDoms(db[k], mapping)
+		return AggDB.aggReplace(db(k),mapping,aggBy,replaceWith,o.v).unique().rename(aggBy)
+	
+	def aggDB_mapping(db, k, mapping, aggBy, replaceWith):
+		o, d1, d2 = partitionDoms(db[k], mapping)
+		return AggDB.aggReplace(db(k),mapping,aggBy,replaceWith,o.v).unique().set_names(aggBy,level=replaceWith)
+	
+	def aggVarSum(var, mapping, aggBy, replaceWith):
+		o, d1, d2 = partitionDoms(var, mapping)
+		return AggDB.aggReplace(var,mapping,aggBy,replaceWith,o.v).rename_axis(index={replaceWith: aggBy}).groupby(var.index.names).sum().rename(var.name)
+	
+	def aggVarMean(var, mapping, aggBy, replaceWith):
+		o, d1, d2 = partitionDoms(var, mapping)
+		return AggDB.aggReplace(var,mapping,aggBy,replaceWith,o.v).rename_axis(index={replaceWith: aggBy}).groupby(var.index.names).mean().rename(var.name)
+	
+	def aggVarSplitDistr(var,mapping,aggBy,replaceWith,weights=None):
+		""" Can be used in one-to-many mappings to split up data with the key 'weights' """
+		return (var*weights).dropna().droplevel(aggBy).rename_axis(index={replaceWith: aggBy}).reorder_levels(var.index.names).rename(var.name)
+	
+	def aggVarWeightedSum(var,mapping,aggBy,replaceWith,weights=None):
+		return AggDB.aggVarSum((var*weights).dropna().droplevel(replaceWith).reorder_levels(var.index.names),mapping,aggBy,replaceWith).rename(var.name)
+	
+	def aggVarWeightedSum_gb(var,mapping,aggBy,replaceWith,weights=None,sumOver=None):
+		return AggDB.aggVarWeightedSum(var,weights,mapping,aggBy,replaceWith).groupby([x for x in var.index.names if x not in sumOver]).sum()
+	
+	def aggVarLambda(var, mapping, aggBy, replaceWith, lambda_=None):
+		o, d1, d2 = partitionDoms(var, mapping)
+		return AggDB.aggReplace(var,mapping,aggBy,replaceWith,o.v).rename_axis(index={replaceWith: aggBy}).groupby(var.index.names).sum(lambda_).rename(var.name)
+		
+	def aggReplace(s,mapping,aggBy,replaceWith,overlap):
+		return adjMultiIndex.applyMult(s,mapping.droplevel([v for v in mapping.names if v not in [replaceWith]+overlap])).droplevel(aggBy)

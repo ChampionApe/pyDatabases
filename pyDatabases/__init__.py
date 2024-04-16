@@ -1,2 +1,1 @@
-from pyDatabases._mixedTools import *
-from .gpyDB import *
+from pyDatabases.auxfuncs import *

@@ -1,1 +1,1 @@
-from .gpyDB import gpy, GpyDB, SeriesDB
+from .gpyDB import gpy, readGmd, gmdFromGpy, MergeDbs, MergeSyms, GpyDB, SeriesDB, DbFromExcel, AggDB
