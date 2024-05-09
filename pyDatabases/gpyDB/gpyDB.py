@@ -34,9 +34,15 @@ class GpyDB:
 
 	def init_NoneType(self, noneObj, db = None, **kwargs):
 		getattr(self, f'initFromDb_{db.__class__.__name__}')(db, **kwargs)
-	def init_str(self, pickle_path, ws = None):
+	def init_str(self, pickle_path, ws = None, name = None):
 		with open(pickle_path, "rb") as file:
 			p = pickle.load(file)
+		if name:
+			p.name = name # update name
+		p.g2np = g2np_
+		if not os.path.exists(p.work_folder):
+			p.work_folder = os.getcwd()
+		p.database = None if 'database' in p.dropattrs else os.path.join(p.data_folder, f'{p.name}.gdx')
 		self.init_dict(p.__dict__, ws = noneInit(ws, p.work_folder))
 	def init_GpyDB(self, db, ws = None):
 		d = {k: v if k in dropattrs_ else deepcopy(v) for k,v in db.__dict__.items()} # copy all attributes
@@ -83,7 +89,7 @@ class GpyDB:
 		self.series = SeriesDB(database = self.gmd())
 
 	@staticmethod
-	def initFast(name, series = None, data_folder = None, dropattrs = None):
+	def initFast(name = "db", series = None, data_folder = None, dropattrs = None, alias = None):
 		""" Initialize class without the gams related attributes """
 		class Empty:
 			def __init__(self): pass
@@ -93,6 +99,7 @@ class GpyDB:
 		obj.data_folder = noneInit(data_folder, os.getcwd())
 		obj.dropattrs = noneInit(dropattrs, dropattrs_.copy())
 		obj.series = noneInit(series, SeriesDB())
+		obj.updateAlias(alias = alias)
 		return obj
 
 	def setWs(self, ws):
@@ -149,10 +156,6 @@ class GpyDB:
 	def __setstate__(self,dict_):
 		""" Don't include ws. Don't include db. """
 		self.__dict__ = dict_
-		self.g2np = g2np_
-		if not os.path.exists(self.work_folder):
-			self.work_folder = os.getcwd()
-		self.database = None if 'database' in self.dropattrs else os.path.join(self.data_folder, f'{self.name}.gdx')
 
 	def export(self,name=None,repo=None):
 		name = self.name if name is None else name
@@ -446,7 +449,7 @@ class AggDB:
 		return idx.rename({k:v}) if isinstance(idx, pd.MultiIndex) else idx.rename(v)
 
 	# ----------------------- 3-4. Read sets/update sets from database  ------------------------- #
-	def updSetsFromSyms(db, types = None, clean = True, ignore_alias = False, clean_alias = False):
+	def updSetsFromSyms(db, types = None, clean = True, ignore_alias = True, clean_alias = False):
 		if clean:
 			AggDB.cleanSets(db)
 		AggDB.readSets(db ,types = types, ignore_alias=ignore_alias)
@@ -458,7 +461,7 @@ class AggDB:
 			AggDB.updateMapsFromSets(db)
 		return db
 
-	def readSets(db, types=None, ignore_alias=False):
+	def readSets(db, types=None, ignore_alias=True):
 		""" read and define set elements from all symbols of type 'types'. """
 		if ignore_alias:
 			[db.aom(gpy(symbol.index.get_level_values(setName).unique())) for symbol in db.getTypes(noneInit(types,['var','par'])).values() for setName in (set(symbol.domains)-db.alias_notin_db)];
@@ -520,7 +523,7 @@ class AggDB:
 		aggBy,replaceWith = noneInit(aggBy, mapping.names[0]), noneInit(replaceWith,mapping.names[-1])
 		defaultAggLike = {k: {'func': 'Sum', 'kwargs': {}} for v,l in db.varDom(aggBy, types = ['var','par']).items() for k in l}
 		aggLike = defaultAggLike if aggLike is None else defaultAggLike | aggLike
-		[db.__setitem__(k, AggDB.aggDB_set(k, mapping, aggBy, replaceWith)) for k in db.varDom(aggBy,types=['set'])]; # this alters sets and potentially aliases if they are also defined in the database
+		[db.__setitem__(k, AggDB.aggDB_set(k, mapping, aggBy, replaceWith)) for k in set(db.aliasDict0[aggBy])-db.alias_notin_db]; # this alters sets and potentially aliases if they are also defined in the database
 		[db.__setitem__(vi, AggDB.aggDB_subset(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith)) for k,v in db.varDom(aggBy, types=['subset']).items() for vi in v];
 		[db.__setitem__(vi, AggDB.aggDB_mapping(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith)) for k,v in db.varDom(aggBy, types=['map']).items() for vi in v];
 		[db.__setitem__(vi, getattr(AggDB,f"aggVar{aggLike[vi]['func']}")(db(vi), mapping.set_names(k,level=aggBy),k,replaceWith,**aggLike[vi]['kwargs'])) for k,v in db.varDom(aggBy).items() for vi in v];

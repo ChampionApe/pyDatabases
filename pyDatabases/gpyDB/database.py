@@ -5,20 +5,19 @@ from copy import deepcopy
 
 #global settings
 gmdTypeDict = {getattr(gmdcc,f'dt_{k}'): k for k in ('set','par','var','equ','alias')} # map from integer types in gmd database to string types
-default_attributes_variables = {k:i for k,i in zip(['level','marginal','lower','upper','scale'],range(-5,0))}
-default_attributes_parameters= {k:i for k,i in zip(['value'],range(-1,0))}
+default_attributes_variables = gt._internals.constants.VAR_DEFAULT_VALUES['free']
 # _numtypes = (int,float,np.generic)
 
 ### --------	1. Type inference	-------- ###
 def typePd(symbol, name = None, type = None, **kwargs):
 	""" Series are designated as variables per default. set type = 'par' to add as parameter. 
 		A set is defined as a 'subset' if symbol.name != name"""
-	if isinstance(symbol, pd.Series):
+	if isinstance(symbol, (pd.Series, pd.DataFrame)):
 		return type if type else 'var'
 	elif isinstance(symbol, pd.MultiIndex):
 		return 'map' if symbol.nlevels>1 else set_or_subset(symbol.name, name)
 	elif isinstance(symbol, pd.Index):
-		return set_or_subset(symbol.name, name)
+		return set_or_subset(symbol.name, noneInit(name, symbol.name))
 	else:
 		return 'scalarPar' if type in ('par', 'scalarPar') else 'scalarVar'
 
@@ -84,10 +83,18 @@ class gpy:
 		return [] if self.index is None else self.index.names
 
 	@property
-	def df(self):
-		""" Only works if self.vals is a pandas series + type is either variable/parameter."""
-		return self.vals.to_frame(name='level' if self.type == 'var' else 'value')
+	def np(self):
+		return np.hstack([self.vals.values.reshape(len(self),1), 
+				np.vstack([np.full(len(self), v) for k,v in self.defaultAttrs.items() if k != 'level']).T])
 
+	@property
+	def defaultAttrs(self):
+		return default_attributes_variables
+
+	@property
+	def df(self):
+		""" Relevant for variable types"""
+		return pd.DataFrame(self.np, index = self.index, columns = default_attributes_variables.keys())
 
 ### --------	3. GAMS to pandas/gpy	-------- ###
 ### --------		3.1. Gmd to gpy		-------- ###
@@ -365,7 +372,7 @@ class gmdFromGpy:
 		return np.full((len(s),1), '', dtype = 'object')
 	@staticmethod
 	def gpyVar2np(s):
-		return gmdFromGpy.gpyIdx2np(s.vals.index), np.vstack([s.vals.values]+[np.full(len(s), k) for k in list(gt._internals.constants.VAR_DEFAULT_VALUES['free'].values())[1:]]).T
+		return gmdFromGpy.gpyIdx2np(s.vals.index), s.np
 	@staticmethod
 	def gpyPar2np(s):
 		return gmdFromGpy.gpyIdx2np(s.vals.index), s.vals.values.reshape(len(s),1)

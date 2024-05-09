@@ -300,7 +300,7 @@ class adjMultiIndex:
 			if not x_dom:
 				return pd.Series(x, index = y)
 			elif set(x_dom).intersection(set(y_dom)):
-				return x.add(pd.Series(y, index = y), fill_value =fill_value) if (set(x_dom)-set(y_dom)) else pd.Series(0, index = y).add(x,fill_value=fill_value)
+				return x.add(pd.Series(0, index = y), fill_value =fill_value) if (set(x_dom)-set(y_dom)) else pd.Series(0, index = y).add(x,fill_value=fill_value)
 			else:
 				return pd.Series(0, index = cartesianProductIndex([getIndex(x),y])).add(x,fill_value=fill_value)
 		else:
@@ -322,12 +322,15 @@ class adjMultiIndex:
 
 	@staticmethod
 	def applyMultIdx(idx, mapping):
-		return pd.Series(0, index = idx).add(pd.Series(0, index = adj.rc_pd(mapping, idx))).dropna().index.reorder_levels(idx.names+[k for k in mapping.names if k not in idx.names])
+		if idx.empty:
+			return pd.MultiIndex.from_tuples([], names = idx.names+ [k for k in mapping.names if k not in idx.names])
+		else:
+			return pd.Series(0, index = idx).add(pd.Series(0, index = adj.rc_pd(mapping, idx))).dropna().index.reorder_levels(idx.names+[k for k in mapping.names if k not in idx.names])
 
 	@staticmethod
 	def applyMultSrs(s, mapping):
 		if s.empty:
-			return pd.Series([], index = pd.MultiIndex.from_tuples([], names = s.index.names + [k for k in mapping.names if k not in s.index.names]))
+			return pd.Series([], index = adjMultiIndex.applyMultIdx(s.index, mapping))
 		else:
 			return s.add(pd.Series(0, index = adj.rc_pd(mapping,s)))
 
