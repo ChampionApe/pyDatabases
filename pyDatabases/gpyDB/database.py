@@ -84,7 +84,7 @@ class gpy:
 
 	@property
 	def np(self):
-		return np.hstack([self.vals.values.reshape(len(self),1), 
+		return np.hstack([self.vals.values.astype(float).reshape(len(self),1), 
 				np.vstack([np.full(len(self), v) for k,v in self.defaultAttrs.items() if k != 'level']).T])
 
 	@property
@@ -375,7 +375,7 @@ class gmdFromGpy:
 		return gmdFromGpy.gpyIdx2np(s.vals.index), s.np
 	@staticmethod
 	def gpyPar2np(s):
-		return gmdFromGpy.gpyIdx2np(s.vals.index), s.vals.values.reshape(len(s),1)
+		return gmdFromGpy.gpyIdx2np(s.vals.index), s.vals.values.astype(float).reshape(len(s),1)
 	@staticmethod
 	def gpyScalarVar2np(s):
 		return np.empty((1,0), dtype =object), np.array([list((gt._internals.constants.VAR_DEFAULT_VALUES['free'] |{'level': s.vals}).values())])

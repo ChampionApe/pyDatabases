@@ -464,7 +464,7 @@ class AggDB:
 	def readSets(db, types=None, ignore_alias=True):
 		""" read and define set elements from all symbols of type 'types'. """
 		if ignore_alias:
-			[db.aom(gpy(symbol.index.get_level_values(setName).unique())) for symbol in db.getTypes(noneInit(types,['var','par'])).values() for setName in (set(symbol.domains)-db.alias_notin_db)];
+			[db.aom(gpy(symbol.index.get_level_values(setName).unique().rename(db.aliasAll(setName)[0]))) for symbol in db.getTypes(noneInit(types,['var','par'])).values() for setName in set(symbol.domains)];
 		else:
 			[db.aom(gpy(symbol.index.get_level_values(setName).unique())) for symbol in db.getTypes(noneInit(types,['var','par'])).values() for setName in set(symbol.domains)];
 
