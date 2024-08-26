@@ -39,11 +39,12 @@ class GpyDB:
 			p = pickle.load(file)
 		if name:
 			p.name = name # update name
-		p.g2np = g2np_
-		if not os.path.exists(p.work_folder):
-			p.work_folder = os.getcwd()
-		p.database = None if 'database' in p.dropattrs else os.path.join(p.data_folder, f'{p.name}.gdx')
-		self.init_dict(p.__dict__, ws = noneInit(ws, p.work_folder))
+		if hasattr(p, '_fast'):
+			self.__dict__ = p.__dict__
+		else:
+			p.g2np = g2np_
+			p.database = None if 'database' in p.dropattrs else os.path.join(p.data_folder, f'{p.name}.gdx')
+			self.init_dict(p.__dict__, ws = noneInit(ws, p.work_folder))
 	def init_GpyDB(self, db, ws = None):
 		d = {k: v if k in dropattrs_ else deepcopy(v) for k,v in db.__dict__.items()} # copy all attributes
 		self.init_dict(d, ws = noneInit(ws, db.ws))
@@ -95,6 +96,7 @@ class GpyDB:
 			def __init__(self): pass
 		obj = Empty()
 		obj.__class__ = GpyDB
+		obj._fast = True 
 		obj.name = name
 		obj.data_folder = noneInit(data_folder, os.getcwd())
 		obj.dropattrs = noneInit(dropattrs, dropattrs_.copy())

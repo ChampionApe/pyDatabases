@@ -378,10 +378,10 @@ class gmdFromGpy:
 		return gmdFromGpy.gpyIdx2np(s.vals.index), s.vals.values.astype(float).reshape(len(s),1)
 	@staticmethod
 	def gpyScalarVar2np(s):
-		return np.empty((1,0), dtype =object), np.array([list((gt._internals.constants.VAR_DEFAULT_VALUES['free'] |{'level': s.vals}).values())])
+		return np.empty((1,0), dtype =object), np.array([list((gt._internals.constants.VAR_DEFAULT_VALUES['free'] |{'level': s.vals}).values())], dtype = float)
 	@staticmethod
 	def gpyScalarPar2np(s):
-		return np.empty((1,0), dtype =object), np.array([[s.vals]])
+		return np.empty((1,0), dtype =object), np.array([[s.vals]], dtype = float)
 
 ### --------	5. Merging methods	-------- ###
 
