@@ -1,4 +1,6 @@
 import itertools, numpy as np, pandas as pd
+import warnings
+warnings.filterwarnings("ignore", message = "The behavior of array concatenation with empty entries is deprecated. In a future version, this will no longer exclude empty items when determining the result dtype. To retain the old behavior, exclude the empty entries before the concat operation.")
 from collections.abc import Iterable
 from six import string_types
 _numtypes = (int,float,np.generic)
