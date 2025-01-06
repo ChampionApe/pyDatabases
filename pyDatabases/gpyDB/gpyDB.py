@@ -3,7 +3,12 @@ from gams.core.numpy import gams2numpy
 import os, pickle, openpyxl, io
 
 admissable_gpy_types = (pd.Series,pd.Index,int,float,str,np.generic,dict,gpy)
-g2np_ = gams2numpy.Gams2Numpy()
+try:
+	defaultGamsVersion_ = os.path.join(os.sep,'GAMS',gams.__version__.split(".")[0])
+	g2np_ = gams2numpy.Gams2Numpy(system_directory = defaultGamsVersion_)
+except:
+	defaultGamsVersion_ = None
+	g2np_ = gams2numpy.Gams2Numpy(system_directory = defaultGamsVersion_)
 dropattrs_ = ['database','ws','g2np','gmd']
 
 def sunion_empty(ls):
@@ -112,10 +117,10 @@ class GpyDB:
 		return getattr(GpyDB, f'initWs_{ws.__class__.__name__}')(ws)
 	@staticmethod
 	def initWs_str(ws):
-		return gams.GamsWorkspace(working_directory=ws)
+		return gams.GamsWorkspace(system_directory = defaultGamsVersion_, working_directory=ws)
 	@staticmethod
 	def initWs_NoneType(ws):
-		return gams.GamsWorkspace()
+		return gams.GamsWorkspace(system_directory = defaultGamsVersion_)
 	@staticmethod
 	def initWs_GamsWorkspace(ws):
 		return ws

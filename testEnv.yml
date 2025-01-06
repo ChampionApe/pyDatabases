@@ -1,4 +1,4 @@
-name: GAMS46
+name: pyDatabases
 channels:
   - defaults
 dependencies:
@@ -11,3 +11,4 @@ dependencies:
   - scipy = 1.12.0
   - pip:
     - seaborn == 0.12.2
+    - gamsapi == 46.2.0
