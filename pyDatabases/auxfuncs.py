@@ -327,7 +327,10 @@ class adjMultiIndex:
 		if idx.empty:
 			return pd.MultiIndex.from_tuples([], names = idx.names+ [k for k in mapping.names if k not in idx.names])
 		else:
-			return pd.Series(0, index = idx).add(pd.Series(0, index = adj.rc_pd(mapping, idx))).dropna().index.reorder_levels(idx.names+[k for k in mapping.names if k not in idx.names])
+			try:
+				return pd.Series(0, index = idx).add(pd.Series(0, index = adj.rc_pd(mapping, idx))).dropna().index.reorder_levels(idx.names+[k for k in mapping.names if k not in idx.names])
+			except KeyError:
+				return adhocFix_pandasRemovesIndexLevels(idx,mapping)
 
 	@staticmethod
 	def applyMultSrs(s, mapping):
@@ -358,6 +361,13 @@ class adjMultiIndex:
 			return pd.DataFrame(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi).T, index = v0.index, columns = index).stack().rename(name).reorder_levels(index.names+v0.index.names if sort_levels is None else sort_levels)
 		else:
 			return pd.Series(adjMultiIndex.grid(v0,vT,index,gridtype=gridtype,phi=phi), index = index,name=name)
+
+def adhocFix_pandasRemovesIndexLevels(symbol, mapping):
+	""" When multiindices are matched, redundant index levels are dropped automatically - this keeps them """
+	s1,s2 = pd.Series(0, index = symbol), pd.Series(0, index = adj.rc_pd(mapping,symbol))
+	x,y = s1.add(s2).dropna().index, s2.add(s1).dropna().index
+	x_df, y_df = x.to_frame().set_index(list(set(x.names).intersection(y.names))), y.to_frame().set_index(list(set(x.names).intersection(y.names)))
+	return pd.MultiIndex.from_frame(pd.concat([x_df, y_df], axis =1).reset_index())
 
 def emptyCopy(obj):
 	class Empty(obj.__class__):
