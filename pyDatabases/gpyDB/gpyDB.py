@@ -530,7 +530,7 @@ class AggDB:
 		aggBy,replaceWith = noneInit(aggBy, mapping.names[0]), noneInit(replaceWith,mapping.names[-1])
 		defaultAggLike = {k: {'func': 'Sum', 'kwargs': {}} for v,l in db.varDom(aggBy, types = ['var','par']).items() for k in l}
 		aggLike = defaultAggLike if aggLike is None else defaultAggLike | aggLike
-		[db.__setitem__(k, AggDB.aggDB_set(k, mapping, aggBy, replaceWith)) for k in set(db.aliasDict0[aggBy])-db.alias_notin_db]; # this alters sets and potentially aliases if they are also defined in the database
+		[db.__setitem__(k, AggDB.aggDB_set(k, mapping, aggBy, replaceWith)) for k in set(db.aliasAll(aggBy))-db.alias_notin_db]; # this alters sets and potentially aliases if they are also defined in the database
 		[db.__setitem__(vi, AggDB.aggDB_subset(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith)) for k,v in db.varDom(aggBy, types=['subset']).items() for vi in v];
 		[db.__setitem__(vi, AggDB.aggDB_mapping(db, vi, mapping.set_names(k,level=aggBy), k, replaceWith)) for k,v in db.varDom(aggBy, types=['map']).items() for vi in v];
 		[db.__setitem__(vi, getattr(AggDB,f"aggVar{aggLike[vi]['func']}")(db(vi), mapping.set_names(k,level=aggBy),k,replaceWith,**aggLike[vi]['kwargs'])) for k,v in db.varDom(aggBy).items() for vi in v];
